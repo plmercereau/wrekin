@@ -64,10 +64,11 @@ buildGoModule {
   # service's PATH and offers `services.wrekin.claudePackage` for those who
   # want the nixpkgs package.
   #
-  # Limit: `wrekin start` installs a systemd/launchd service from
-  # os.Executable(), which is the wrapped binary, not this wrapper, so the
-  # appended PATH does not reach that service. The Home Manager module sets
-  # the service's PATH itself; prefer it (or `brew services`) for the daemon.
+  # `wrekin start` installs its systemd/launchd service from the path the
+  # user invoked (this wrapper, or the profile symlink to it), not from the
+  # wrapped binary, and records a PATH built from the invoking shell plus
+  # ~/.local/bin, so git and tmux are found there too. The Home Manager module
+  # remains the declarative way to run the daemon.
   postInstall = ''
     wrapProgram $out/bin/wrekin \
       --suffix PATH : ${

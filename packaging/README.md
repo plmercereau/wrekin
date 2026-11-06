@@ -25,9 +25,9 @@ the interactive shell's, so each channel also sets that PATH.
 | | `git` | `tmux` | `claude` | Service PATH |
 |---|---|---|---|---|
 | Homebrew formula | not declared: Homebrew itself requires git (Xcode's Command Line Tools, or the distribution's package on Linux) | `depends_on "tmux"` | not installable by a formula (`claude-code` is a cask, macOS only, or the native installer); the `caveats` say so | `~/.local/bin`, then `std_service_path_env` (Homebrew's prefix and the system directories) |
-| Nix package | `gitMinimal`, appended to the binary's PATH by a wrapper | appended likewise | not wrapped in: see below | n/a (`wrekin start` installs the *unwrapped* binary: use the module) |
+| Nix package | `gitMinimal`, appended to the binary's PATH by a wrapper | appended likewise | not wrapped in: see below | `wrekin start` installs the wrapper (the path the user invoked) and records a PATH: `~/.local/bin`, the invoking shell's PATH, the system directories |
 | Home Manager module | `services.wrekin.path` (default `pkgs.git`) | `services.wrekin.path` (default `pkgs.tmux`) | `services.wrekin.claudePackage`: `pkgs.claude-code` when unfree packages are allowed, `null` otherwise | `~/.local/bin`, the profile, Homebrew on macOS, `services.wrekin.path`, the system directories |
-| Release archive | the user's | the user's | the user's | `wrekin start` writes a unit/agent without a PATH; the service manager's default applies |
+| Release archive | the user's | the user's | the user's | `wrekin start` records a PATH in the unit/agent: `~/.local/bin`, the invoking shell's PATH, the system directories |
 
 The order is deliberate: whatever the user installed and keeps up to date
 (`~/.local/bin`, where Claude Code's native installer self-updates; the Nix
