@@ -1,6 +1,8 @@
 import { env, SELF } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import { createAuth } from "../src/auth";
+import { getDb } from "../src/db/kysely";
+import { KyselyNodeStore } from "../src/db/nodes";
 import { generateNodeKey } from "./helpers/keys";
 import { createTestSession } from "./helpers/session";
 
@@ -69,7 +71,8 @@ describe("pages", () => {
   });
 
   it("lists the signed-in user's nodes with fingerprint and state", async () => {
-    const { headers } = await newSession("nodes-user");
+    // The agent registers with the device-flow token, which dies with the registration; the browser reads the page.
+    const { headers, cookieHeaders } = await newSession("nodes-user");
     const key = await generateNodeKey();
     const created = await page("/api/nodes", {
       method: "POST",
@@ -77,7 +80,7 @@ describe("pages", () => {
       body: JSON.stringify({ name: "kitchen-mac", publicKey: key.publicKey }),
     });
     expect(created.status).toBe(201);
-    const res = await page("/nodes", { headers });
+    const res = await page("/nodes", { headers: cookieHeaders });
     expect(res.status).toBe(200);
     const body = await res.text();
     expect(body).toContain("kitchen-mac");
@@ -87,13 +90,11 @@ describe("pages", () => {
   });
 
   it("escapes what comes from the database", async () => {
-    const { headers } = await newSession("xss-user");
-    await page("/api/nodes", {
-      method: "POST",
-      headers: { "content-type": "application/json", ...headers },
-      body: JSON.stringify({ name: "<img src=x onerror=alert(1)>", publicKey: (await generateNodeKey()).publicKey }),
-    });
-    const body = await (await page("/nodes", { headers })).text();
+    // The name rule refuses such a name at registration; the row is written straight into D1,
+    // as one written before the rule would be, since the page must escape whatever is stored.
+    const { userId, cookieHeaders } = await newSession("xss-user");
+    await new KyselyNodeStore(getDb(env)).insertNode({ accountId: userId, name: "<img src=x onerror=alert(1)>", publicKey: (await generateNodeKey()).publicKey });
+    const body = await (await page("/nodes", { headers: cookieHeaders })).text();
     expect(body).not.toContain("<img src=x");
     expect(body).toContain("&lt;img src=x");
   });
