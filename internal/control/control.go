@@ -12,6 +12,7 @@ import (
 	"io/fs"
 	"net"
 	"os"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -88,14 +89,34 @@ type Server struct {
 func NewServer(h Handler) *Server { return &Server{handler: h} }
 
 // Listen creates the unix socket at path (mode 0600), replacing a stale file.
+//
+// The socket's directory must be private (0700 at most); a wider one is
+// refused. The socket itself is created with the umask raised to 0077 so that
+// it never exists with the default umask's permissions, and Chmod to 0600
+// follows as a belt. The umask is process-wide: Listen must run before any
+// goroutine that creates files, which daemon.Run guarantees by calling it
+// before it starts its goroutines.
 func Listen(path string) (net.Listener, error) {
 	if len(path) >= 100 {
 		return nil, fmt.Errorf("socket path %q is too long for a unix socket", path)
 	}
+	dir := filepath.Dir(path)
+	info, err := os.Stat(dir)
+	if err != nil {
+		return nil, fmt.Errorf("socket directory: %w", err)
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("socket directory %s is not a directory", dir)
+	}
+	if mode := info.Mode().Perm(); mode&0o077 != 0 {
+		return nil, fmt.Errorf("socket directory %s is accessible to other users (mode %04o); it must be 0700 (chmod 700 %s)", dir, mode, dir)
+	}
 	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return nil, err
 	}
+	oldMask := syscall.Umask(0o077)
 	ln, err := net.Listen("unix", path)
+	syscall.Umask(oldMask)
 	if err != nil {
 		return nil, err
 	}

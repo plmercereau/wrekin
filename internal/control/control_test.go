@@ -114,6 +114,26 @@ func TestClientReportsNotRunning(t *testing.T) {
 	}
 }
 
+// The socket directory must be private: in a wider directory other users
+// could reach the socket before (and, by name, after) its Chmod.
+func TestListenRefusesWideDirectory(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "state")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o755); err != nil { // independent of the umask
+		t.Fatal(err)
+	}
+	ln, err := Listen(filepath.Join(dir, "c.sock"))
+	if err == nil {
+		ln.Close()
+		t.Fatal("Listen accepted a 0755 socket directory")
+	}
+	if !strings.Contains(err.Error(), dir) || !strings.Contains(err.Error(), "0700") {
+		t.Fatalf("err = %v, want a refusal naming the directory and 0700", err)
+	}
+}
+
 func TestListenUnixSocket(t *testing.T) {
 	dir, err := os.MkdirTemp(os.TempDir(), "ws")
 	if err != nil {
