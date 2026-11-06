@@ -316,6 +316,18 @@ func (r *Runner) prepare(jobID string) {
 	r.save(job, protocol.StatePreparing)
 	p := job.Params
 
+	// Before anything is cloned or asked: a harness without credentials would
+	// only fail later, in the terminal, after the user approved a clone.
+	signedIn, err := r.deps.Harness.SignedIn(r.ctx)
+	switch {
+	case err != nil:
+		r.deps.Logger.Warn("harness sign-in status unknown; going on", "job", job.ID, "err", err)
+	case !signedIn:
+		r.fail(job, protocol.CodeHarnessUnavailable,
+			fmt.Sprintf("%s is not signed in on this machine: sign in there once (for Claude Code, `claude auth login`), then request the teleport again", job.Harness), nil)
+		return
+	}
+
 	if dir := strings.TrimSpace(p.Directory); dir != "" {
 		resolved, err := r.deps.Policy.Resolve(dir)
 		switch {

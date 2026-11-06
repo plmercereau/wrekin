@@ -1,6 +1,10 @@
 package claude
 
 import (
+	"context"
+	"errors"
+	"fmt"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -76,5 +80,31 @@ func TestDetectParsesVersion(t *testing.T) {
 	}
 	if got := c.LaunchArgs("session_s")[0]; got != fake {
 		t.Errorf("LaunchArgs binary = %q, want the resolved %q", got, fake)
+	}
+}
+
+func TestSignedInReadsAuthStatus(t *testing.T) {
+	dir := t.TempDir()
+	cases := []struct {
+		name, script string
+		want         bool
+		wantErr      bool
+	}{
+		// What Claude Code 2.1.177 prints, and its exit status 1, when signed out.
+		{"signed out", `echo '{"loggedIn": false, "authMethod": "none", "apiProvider": "firstParty"}'; exit 1`, false, false},
+		{"signed in", `echo '{"loggedIn": true, "authMethod": "claude.ai"}'`, true, false},
+		{"no auth command", `echo "error: unknown command 'auth'" >&2; exit 1`, false, true},
+		{"unexpected output", `echo 'hello'`, false, true},
+	}
+	for i, tc := range cases {
+		fake := filepath.Join(dir, fmt.Sprintf("claude-%d", i))
+		writeExecutable(t, fake, "#!/bin/sh\n"+tc.script+"\n")
+		got, err := New("", fake).SignedIn(context.Background())
+		if got != tc.want || (err != nil) != tc.wantErr {
+			t.Errorf("%s: SignedIn = %v, %v", tc.name, got, err)
+		}
+	}
+	if _, err := New("", filepath.Join(dir, "absent")).SignedIn(context.Background()); !errors.Is(err, exec.ErrNotFound) {
+		t.Errorf("a missing binary: err = %v, want exec.ErrNotFound", err)
 	}
 }

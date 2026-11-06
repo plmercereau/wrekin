@@ -143,7 +143,10 @@ type fakeHarness struct {
 	trusted  map[string]bool
 	trustErr error
 	info     harness.Info
-	trusts   []string
+	// signedOut makes SignedIn answer false; signInErr makes it fail.
+	signedOut bool
+	signInErr error
+	trusts    []string
 }
 
 func newFakeHarness() *fakeHarness {
@@ -152,6 +155,11 @@ func newFakeHarness() *fakeHarness {
 
 func (f *fakeHarness) ID() string                    { return "claude-code" }
 func (f *fakeHarness) Detect() (harness.Info, error) { return f.info, nil }
+func (f *fakeHarness) SignedIn(context.Context) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return !f.signedOut, f.signInErr
+}
 func (f *fakeHarness) Trusted(dir string) (bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

@@ -10,6 +10,8 @@
 # Linux gets a `systemd --user` unit, macOS a launchd agent. The module
 # evaluates on both; the guards are `pkgs.stdenv.hostPlatform.isLinux` / `isDarwin`.
 # Pairing (`wrekin auth`) stays a manual, one-time step: it needs a browser.
+# It also signs Claude Code in (`claude auth login`) when it is not, with the
+# Claude Code of `claudePackage` if the user has none of their own.
 {
   config,
   lib,
@@ -63,6 +65,25 @@ let
       "/bin"
     ]
   );
+
+  # The `wrekin` on the user's PATH gets the daemon's tools appended to its
+  # PATH, as the daemon has them: `wrekin auth` checks and signs in the very
+  # Claude Code a teleport launches (the module's `claudePackage` when the
+  # user has none of their own), and Claude Code keeps its credentials per
+  # user, so the daemon finds them. Appended, so the user's own tools win.
+  cliPackage =
+    if cfg.path == [ ] then
+      cfg.package
+    else
+      pkgs.symlinkJoin {
+        name = "wrekin-${lib.getVersion cfg.package}";
+        paths = [ cfg.package ];
+        nativeBuildInputs = [ pkgs.makeBinaryWrapper ];
+        postBuild = ''
+          wrapProgram $out/bin/wrekin --suffix PATH : ${lib.makeBinPath cfg.path}
+        '';
+        meta.mainProgram = "wrekin";
+      };
 in
 {
   options.services.wrekin = {
@@ -144,7 +165,7 @@ in
   config = lib.mkIf cfg.enable (
     lib.mkMerge [
       {
-        home.packages = [ cfg.package ];
+        home.packages = [ cliPackage ];
 
         xdg.configFile."wrekin/settings.json" = lib.mkIf (cfg.settings != { }) {
           source = settingsFormat.generate "wrekin-settings.json" cfg.settings;

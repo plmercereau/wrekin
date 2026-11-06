@@ -161,8 +161,14 @@ Observed on this machine (values not recorded, only the shape):
 `projects[<dir>].hasTrustDialogAccepted` and, on `Trust(dir)`, sets it to
 `true` after copying the file to `~/.claude.json.wrekin-backup`; every other
 value is preserved byte for byte as a JSON value, and the write is refused
-(`ErrUnrecognisedClaudeJSON`) when the file is missing or its top level is
-not an object with a `projects` object. This remains a version-sensitive
+(`ErrUnrecognisedClaudeJSON`) when its top level is not an object or its
+`projects` is not an object. A missing file is created (mode 0600) with the
+one entry, and a file without `projects` gains it: both are what a machine
+where Claude Code never opened a project looks like (observed on a fresh
+NixOS host on 2026-11-06, where `claude auth status` writes a
+`~/.claude.json` with `firstStartTime`, `migrationVersion`, `userID` and no
+`projects`). `CLAUDE_CONFIG_DIR`, when set for the daemon, moves the file to
+`$CLAUDE_CONFIG_DIR/.claude.json`, as for Claude Code itself. This remains a version-sensitive
 integration: a Claude Code release that moves the trust flag would make
 `Trusted()` return false and the job would ask for approval again, which is
 the safe failure.

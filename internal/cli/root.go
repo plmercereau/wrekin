@@ -24,6 +24,11 @@ type app struct {
 	// httpClient talks to the cloud; nil means the pairing default (tests
 	// inject an in-process transport).
 	httpClient *http.Client
+	// claude is the Claude Code adapter `wrekin auth` signs in; nil means the
+	// real one (tests inject a fake).
+	claude claudeSignIn
+	// interactive overrides the terminal check on stdin (tests).
+	interactive func() bool
 }
 
 // errSilent marks errors already explained on stdout; Execute only sets the

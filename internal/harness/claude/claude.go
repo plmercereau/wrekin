@@ -5,6 +5,9 @@ package claude
 import (
 	"bytes"
 	"context"
+	"encoding/json"
+	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -40,8 +43,13 @@ func New(claudeJSONPath, binary string) *Claude {
 	return &Claude{claudeJSON: claudeJSONPath, binary: binary}
 }
 
-// DefaultClaudeJSONPath is ~/.claude.json.
+// DefaultClaudeJSONPath is ~/.claude.json, or .claude.json in
+// $CLAUDE_CONFIG_DIR when the daemon runs with Claude Code's configuration
+// moved there, as Claude Code itself reads it.
 func DefaultClaudeJSONPath() string {
+	if dir := os.Getenv("CLAUDE_CONFIG_DIR"); dir != "" {
+		return filepath.Join(dir, ".claude.json")
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return ".claude.json"
@@ -73,6 +81,55 @@ func (c *Claude) Detect() (harness.Info, error) {
 		return harness.Info{Available: true}, nil
 	}
 	return harness.Info{Available: true, Version: parseVersion(out.String())}, nil
+}
+
+// SignedIn implements harness.Harness with `claude auth status --json`, which
+// prints {"loggedIn": …, "authMethod": …} and exits 1 when signed out. It
+// sees what a launch would see: the daemon's environment
+// (ANTHROPIC_API_KEY, CLAUDE_CODE_OAUTH_TOKEN) as well as the stored
+// credentials. A version without that command answers something else, and
+// the result is then an error: the caller cannot tell and goes on.
+func (c *Claude) SignedIn(ctx context.Context) (bool, error) {
+	path, err := exec.LookPath(c.binary)
+	if err != nil {
+		return false, fmt.Errorf("%w: %s", exec.ErrNotFound, c.binary)
+	}
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, path, "auth", "status", "--json")
+	var stdout bytes.Buffer
+	cmd.Stdout = &stdout
+	runErr := cmd.Run()
+	var status struct {
+		LoggedIn *bool `json:"loggedIn"`
+	}
+	if err := json.Unmarshal(bytes.TrimSpace(stdout.Bytes()), &status); err != nil || status.LoggedIn == nil {
+		if runErr != nil {
+			return false, fmt.Errorf("claude auth status: %w", runErr)
+		}
+		return false, fmt.Errorf("claude auth status: unexpected output %q", truncate(stdout.String(), 200))
+	}
+	return *status.LoggedIn, nil
+}
+
+// Login runs `claude auth login` on the caller's terminal: it prints a URL,
+// waits for the browser, and stores the credentials where every later
+// `claude` of this user finds them, the daemon's included.
+func (c *Claude) Login(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer) error {
+	path, err := exec.LookPath(c.binary)
+	if err != nil {
+		return fmt.Errorf("%w: %s", exec.ErrNotFound, c.binary)
+	}
+	cmd := exec.CommandContext(ctx, path, "auth", "login")
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = stdin, stdout, stderr
+	return cmd.Run()
+}
+
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "…"
 }
 
 var versionRe = regexp.MustCompile(`\d+\.\d+\.\d+[\w.-]*`)

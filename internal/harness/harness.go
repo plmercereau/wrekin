@@ -27,6 +27,9 @@ type Harness interface {
 	// Detect finds the binary and its version; a missing binary is
 	// Info{Available: false}, not an error.
 	Detect() (Info, error)
+	// SignedIn reports whether the harness has credentials to run with. An
+	// error means it cannot tell (an older version); the caller goes on.
+	SignedIn(ctx context.Context) (bool, error)
 	// Trusted reports whether the harness already trusts dir.
 	Trusted(dir string) (bool, error)
 	// Trust records dir as trusted, so the harness does not ask on launch.

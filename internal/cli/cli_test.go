@@ -2,11 +2,14 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -96,7 +99,7 @@ func TestAuthCreatesPrivateConfigDir(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	settingsPath := filepath.Join(t.TempDir(), "fresh", "settings.json")
 	var out bytes.Buffer
-	a := &app{version: "t", stdout: &out, stderr: &out, stdin: strings.NewReader(""), httpClient: &http.Client{Transport: fakeAuth{}}}
+	a := &app{version: "t", stdout: &out, stderr: &out, stdin: strings.NewReader(""), httpClient: &http.Client{Transport: fakeAuth{}}, claude: &fakeClaude{signedIn: true}}
 	root := newRootCommand(a)
 	root.SetArgs([]string{"auth", "--settings", settingsPath, "--relay", "wss://wrekin.test/connect"})
 	if err := root.Execute(); err != nil {
@@ -120,5 +123,101 @@ func TestAuthCreatesPrivateConfigDir(t *testing.T) {
 	}
 	if _, err := os.Stat(settingsPath); err != nil {
 		t.Errorf("settings.json not written: %v", err)
+	}
+}
+
+// fakeClaude answers SignedIn from its field and signs in on Login.
+type fakeClaude struct {
+	signedIn bool
+	err      error
+	logins   int
+	loginErr error
+}
+
+func (f *fakeClaude) SignedIn(context.Context) (bool, error) { return f.signedIn, f.err }
+func (f *fakeClaude) Login(context.Context, io.Reader, io.Writer, io.Writer) error {
+	f.logins++
+	if f.loginErr != nil {
+		return f.loginErr
+	}
+	f.signedIn = true
+	return nil
+}
+
+// runAuth pairs a fresh machine with the fake relay, then returns the output.
+func runAuth(t *testing.T, fake *fakeClaude, interactive bool, extra ...string) string {
+	t.Helper()
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	var out bytes.Buffer
+	a := &app{
+		version: "t", stdout: &out, stderr: &out, stdin: strings.NewReader(""),
+		httpClient: &http.Client{Transport: fakeAuth{}}, claude: fake,
+		interactive: func() bool { return interactive },
+	}
+	root := newRootCommand(a)
+	root.SetArgs(append([]string{"auth", "--settings", filepath.Join(t.TempDir(), "settings.json"), "--relay", "wss://wrekin.test/connect"}, extra...))
+	if err := root.Execute(); err != nil {
+		t.Fatalf("auth: %v\n%s", err, out.String())
+	}
+	return out.String()
+}
+
+func TestAuthRunsClaudeLoginWhenSignedOutOnATerminal(t *testing.T) {
+	fake := &fakeClaude{}
+	out := runAuth(t, fake, true)
+	if fake.logins != 1 || !strings.Contains(out, "running `claude auth login`") || !strings.HasSuffix(strings.TrimSpace(out), "Claude Code is signed in on this machine.") {
+		t.Errorf("logins = %d, output:\n%s", fake.logins, out)
+	}
+}
+
+func TestAuthOnlyReportsWithoutATerminalOrWithNoClaudeLogin(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		interactive bool
+		flags       []string
+	}{{"no terminal", false, nil}, {"--no-claude-login", true, []string{"--no-claude-login"}}} {
+		fake := &fakeClaude{}
+		out := runAuth(t, fake, tc.interactive, tc.flags...)
+		if fake.logins != 0 || !strings.Contains(out, "run `claude auth login` here before teleporting") {
+			t.Errorf("%s: logins = %d, output:\n%s", tc.name, fake.logins, out)
+		}
+	}
+}
+
+func TestAuthLeavesASignedInClaudeAlone(t *testing.T) {
+	fake := &fakeClaude{signedIn: true}
+	out := runAuth(t, fake, true)
+	if fake.logins != 0 || !strings.Contains(out, "Claude Code is signed in on this machine.") {
+		t.Errorf("logins = %d, output:\n%s", fake.logins, out)
+	}
+}
+
+func TestAuthSaysWhenClaudeIsMissingAndNeverFailsOnIt(t *testing.T) {
+	out := runAuth(t, &fakeClaude{err: fmt.Errorf("%w: claude", exec.ErrNotFound)}, true)
+	if !strings.Contains(out, "is not on this PATH") || !strings.Contains(out, "Paired as node") {
+		t.Errorf("output:\n%s", out)
+	}
+	failed := &fakeClaude{loginErr: errors.New("cancelled")}
+	out = runAuth(t, failed, true)
+	if !strings.Contains(out, "did not complete (cancelled)") {
+		t.Errorf("output:\n%s", out)
+	}
+}
+
+// On a machine paired already, `wrekin auth` still checks Claude Code: that
+// is how a node paired before this check gets signed in.
+func TestAuthOnAPairedMachineStillSignsClaudeIn(t *testing.T) {
+	fake := &fakeClaude{signedIn: true}
+	runAuth(t, fake, true) // pairs, with a signed-in Claude
+	var out bytes.Buffer
+	fake.signedIn = false
+	a := &app{version: "t", stdout: &out, stderr: &out, stdin: strings.NewReader(""), httpClient: &http.Client{Transport: fakeAuth{}}, claude: fake, interactive: func() bool { return true }}
+	root := newRootCommand(a)
+	root.SetArgs([]string{"auth", "--settings", filepath.Join(t.TempDir(), "settings.json"), "--relay", "wss://wrekin.test/connect"})
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "already paired") || fake.logins != 1 {
+		t.Errorf("logins = %d, output:\n%s", fake.logins, out.String())
 	}
 }
