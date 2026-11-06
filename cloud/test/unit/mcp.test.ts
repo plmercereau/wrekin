@@ -117,6 +117,7 @@ describe("MCP tools", () => {
     await refused("teleport", { node: "workstation", session: `${session}${"x".repeat(2048)}` }, "session");
     await refused("teleport", { node: "workstation", session, repository: "r".repeat(2049) }, "repository");
     await refused("teleport", { node: "workstation", session, directory: "d".repeat(2049) }, "directory");
+    await refused("teleport", { node: "workstation", session, title: "t".repeat(201) }, "title");
     await refused("get_teleport_status", { node: "workstation", jobId: "j".repeat(257) }, "jobId");
     expect(hub.commands).toHaveLength(before);
   });
@@ -154,6 +155,12 @@ describe("MCP tools", () => {
     expect(result.structuredContent).toEqual(readyJob());
     expect(textOf(result)).toContain("wrekin attach wrekin-01CN");
     expect(textOf(result)).not.toMatch(/\$ |\x1b\[/); // no terminal output, ever
+  });
+
+  it("teleport passes the session's title on, so the machine names its Remote Control session after it", async () => {
+    hub.answer(mine.id, "teleport", { ok: true, data: readyJob() });
+    await call("teleport", { node: "workstation", session: "session_01CNrG8QvmZWiHRpzs2xhqhN", repository: "plmercereau/wrekin", title: "Téléporte session avec Wrekin" });
+    expect(hub.commands[hub.commands.length - 1]?.params).toMatchObject({ title: "Téléporte session avec Wrekin" });
   });
 
   it("explains needs_attention and asks for approve_repository", async () => {
@@ -201,6 +208,8 @@ describe("MCP tools", () => {
     expect(text).toContain("claude.ai/code");
     expect(text).toContain("switch to the Remote Control session");
     expect(text).toContain("at https://claude.ai/code/session_01RC");
+    // The Remote Control session replaces this one: the user may archive the cloud session.
+    expect(text).toContain("can be archived");
   });
 
   it("approve_repository passes the decision through and reports a node error", async () => {

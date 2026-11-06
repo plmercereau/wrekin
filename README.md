@@ -194,13 +194,17 @@ writes it with the defaults if it does not exist.
   already running are not counted).
 - `teleport.remoteControl` (default `true`): put the teleported session
   under Claude Code's Remote Control, so you continue it from claude.ai/code
-  or the Claude app, as "<node> <session>", as well as with `wrekin attach`
-  on the machine. Claude Code ignores `--remote-control` next to
-  `--teleport`, so once the session is up the daemon types
-  `/remote-control "<node> <session>"` into it, only when the input box is
+  or the Claude app, as well as with `wrekin attach` on the machine. It is
+  listed as "<cloud session's title> (<node>)", the title Claude passes with
+  the teleport, or "<node> <session>" without one. Claude Code ignores
+  `--remote-control` next to `--teleport`, so once the session is up the
+  daemon types `/remote-control <name>` into it, only when the input box is
   bare (never into a dialog), and hands the link Claude Code prints back to
   Claude. The Claude conversation that asked for the teleport keeps running
-  in the cloud on its own; it cannot act on the machine.
+  in the cloud on its own and cannot act on the machine; Claude tells you
+  that you can archive it from the claude.ai sidebar. Claude Code has no
+  command to archive a cloud session, and Wrekin does not call claude.ai's
+  internal API with your credentials to do it.
 - `workspace.repositories` (optional): pins a repository to its checkout.
   Keys take any form a teleport accepts (`owner/name` for GitHub, an
   `https://` or `ssh://` URL, `git@host:owner/name.git`); values are

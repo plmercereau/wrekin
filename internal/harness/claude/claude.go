@@ -165,8 +165,10 @@ func (c *Claude) LaunchArgs(cloudSessionID string) []string {
 }
 
 // remoteControlNameRe bounds the Remote Control name typed into the session:
-// words, nothing the input box could read as anything else.
-var remoteControlNameRe = regexp.MustCompile(`^[\p{L}\p{N}][\p{L}\p{N} ._-]{0,79}$`)
+// one line of words and common punctuation, starting with a letter or a
+// digit, nothing the input box could read as anything else (no control
+// character, so no Enter in it).
+var remoteControlNameRe = regexp.MustCompile(`^[\p{L}\p{N}][\p{L}\p{N} ._,:;'’!?()&+/#-]{0,99}$`)
 
 // RemoteControlCommand implements harness.Harness with Claude Code's
 // /remote-control, which takes the session's name and, once its consent has

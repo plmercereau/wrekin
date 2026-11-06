@@ -742,3 +742,52 @@ func TestKillRefusesWhatIsNotWrekins(t *testing.T) {
 		}
 	}
 }
+
+func TestRemoteControlTitle(t *testing.T) {
+	for in, want := range map[string]string{
+		"Téléporte session avec Wrekin":     "Téléporte session avec Wrekin",
+		"  fix: the *nodes* page\n`live`  ": "fix: the nodes page live",
+		"--dangerously-skip-permissions":    "dangerously-skip-permissions",
+		"\x1b[31m":                          "31m",
+		"*** ":                              "",
+		strings.Repeat("long title ", 20):   strings.TrimSpace(strings.Repeat("long title ", 20)[:72]),
+	} {
+		if got := remoteControlTitle(in); got != want {
+			t.Errorf("remoteControlTitle(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// With the cloud session's title, the Remote Control session is named after
+// it, then the node: what the user sees next to the cloud session.
+func TestLaunchNamesRemoteControlAfterTheCloudTitle(t *testing.T) {
+	requireGit(t)
+	e := newEnv(t, func(d *RunnerDeps) {
+		d.RemoteControl = true
+		d.NodeName = "fennec"
+		d.RemoteControlGrace = 2 * time.Second
+	})
+	checkout := filepath.Join(e.root, "wrekin")
+	initRepo(t, checkout, "git@github.com:plmercereau/wrekin.git")
+	e.harn.setTrusted(checkout, true)
+	p := teleportParams(14, "plmercereau/wrekin")
+	p.Title = "Téléporte session avec Wrekin"
+	job, jerr := e.runner.Teleport(context.Background(), p)
+	if jerr != nil {
+		t.Fatal(jerr)
+	}
+	launched := e.waitLaunched(1)
+	e.term.setPane(launched.session, "READY IDLE")
+	deadline := time.Now().Add(2 * time.Second)
+	for len(e.term.sentLines()) == 0 && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	want := "Téléporte session avec Wrekin (fennec)"
+	if sent := e.term.sentLines(); len(sent) != 1 || sent[0] != launched.session+": /remote-control "+want {
+		t.Fatalf("sent %q", sent)
+	}
+	e.term.setPane(launched.session, "READY IDLE RC-ON https://claude.ai/code/session_01T")
+	if j := e.waitState(job.ID, protocol.StateReady); j.Session.RemoteControl != want {
+		t.Errorf("session = %+v", j.Session)
+	}
+}
