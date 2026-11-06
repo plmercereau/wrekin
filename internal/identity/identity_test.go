@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 )
@@ -105,6 +106,38 @@ func TestLoadMissingIsErrNotPaired(t *testing.T) {
 	_, err := Load(filepath.Join(t.TempDir(), "identity.json"))
 	if !errors.Is(err, ErrNotPaired) {
 		t.Fatalf("err = %v, want ErrNotPaired", err)
+	}
+}
+
+// identity.json holds the private key; like ssh, Load refuses a file other
+// users can read or write instead of using it silently.
+func TestLoadRefusesGroupOrWorldAccessibleFile(t *testing.T) {
+	id, _ := Generate("box")
+	id.NodeID = "node_01J"
+	path := filepath.Join(t.TempDir(), "identity.json")
+	if err := id.Save(path); err != nil {
+		t.Fatal(err)
+	}
+	for _, mode := range []os.FileMode{0o644, 0o640, 0o604, 0o660, 0o601} {
+		if err := os.Chmod(path, mode); err != nil {
+			t.Fatal(err)
+		}
+		_, err := Load(path)
+		if err == nil {
+			t.Errorf("mode %04o: Load used a key file accessible to other users", mode)
+			continue
+		}
+		if !strings.Contains(err.Error(), path) || !strings.Contains(err.Error(), "0600") {
+			t.Errorf("mode %04o: error %q should name the file and 0600", mode, err)
+		}
+	}
+	for _, mode := range []os.FileMode{0o600, 0o400} {
+		if err := os.Chmod(path, mode); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Load(path); err != nil {
+			t.Errorf("mode %04o: %v", mode, err)
+		}
 	}
 }
 

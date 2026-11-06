@@ -63,8 +63,20 @@ func Generate(name string) (*Identity, error) {
 	}, nil
 }
 
-// Load reads identity.json. A missing file is ErrNotPaired.
+// Load reads identity.json. A missing file is ErrNotPaired. A file that other
+// users can read or write is refused, as ssh refuses a loose private key: the
+// node's key must stay 0600.
 func Load(path string) (*Identity, error) {
+	info, err := os.Stat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, ErrNotPaired
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read identity: %w", err)
+	}
+	if mode := info.Mode().Perm(); mode&0o077 != 0 {
+		return nil, fmt.Errorf("%s is accessible to other users (mode %04o); it holds the node's private key and must be 0600 (chmod 600 %s)", path, mode, path)
+	}
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, ErrNotPaired
