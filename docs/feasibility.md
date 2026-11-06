@@ -53,18 +53,20 @@ permitted)`, while tmux still exits 0 — see the note on tmux below). One run
 outside the sandbox was possible:
 
 - the tmux server started and `new-session -d` returned 0;
-- after 10 s the session no longer existed (`can't find pane: =wrekin-probe`),
-  although the command chain ended with `sleep 30`;
-- no pane content could be captured, so the lines Claude Code prints for an
-  invalid id and the shape of its prompt are **not recorded yet**.
+- after 10 s `display-message` and `capture-pane` answered `can't find pane:
+  =wrekin-probe`, which was read at the time as the session having died.
 
-The command string of that run used `$?` inside the tmux command (the user
-shell is zsh, so that is probably not the cause) and the user's tmux
-configuration sets none of `destroy-unattached`, `default-command`,
-`remain-on-exit` or hooks. The cause of the early exit is therefore unknown;
-a second run with the improved script below was not permitted. **P2 is
-open**: rerun the script by hand (outside any sandbox) and paste the capture
-here.
+CI later showed what that error really was: the commands that take a
+target-pane (`capture-pane`, `display-message`, `set-option`) read `=name` as
+a window or pane name, not as an exact session name, and fail with exactly
+that message while the session is alive; the exact-session form for them is
+`=name:` (trailing colon). The session-taking commands (`has-session`,
+`kill-session`, `attach-session`) do accept `=name`. The agent uses the right
+form for each (`internal/terminal/tmux.go`, `target` and `paneTarget`), and
+the tmux tests now run green on Linux (tmux 3.4) and macOS (tmux 3.8) in CI.
+The probe below is corrected accordingly; the lines Claude Code prints for an
+invalid id and the shape of its prompt are **still not recorded**: rerun the
+script by hand (outside any sandbox) and paste the capture here.
 
 ```sh
 #!/bin/sh
@@ -83,10 +85,10 @@ sleep 30
 CMD
 SOCK=wrekin-probe-$$
 tmux -L "$SOCK" -f /dev/null new-session -d -s wrekin-probe -c "$PROBE_DIR" "sh $PROBE_DIR/probe-cmd.sh" \
-  \; set-option -t wrekin-probe remain-on-exit on
+tmux -L "$SOCK" set-option -t '=wrekin-probe:' remain-on-exit on
 sleep 10
-tmux -L "$SOCK" display-message -p -t =wrekin-probe '#{pane_current_command} dead=#{pane_dead}'
-tmux -L "$SOCK" capture-pane -p -t =wrekin-probe -S -40
+tmux -L "$SOCK" display-message -p -t '=wrekin-probe:' '#{pane_current_command} dead=#{pane_dead}'
+tmux -L "$SOCK" capture-pane -p -t '=wrekin-probe:' -S -40
 tmux -L "$SOCK" kill-server
 rm -rf "$PROBE_DIR"
 ```
@@ -97,9 +99,11 @@ The readiness detection is implemented as the plan specifies and is covered
 by unit tests with a fake terminal:
 
 - the session is launched with `tmux new-session -d -s wrekin-<shortId> -c
-  <workdir> '<claude> --teleport <id>'` and, in the same tmux call,
-  `set-option -t =wrekin-<shortId> destroy-unattached off`, so a user
-  configuration that destroys unattached sessions cannot kill it;
+  <workdir> '<claude> --teleport <id>'`, its existence is checked with
+  `has-session`, then a second call sets `destroy-unattached off` on it (best
+  effort), so a user configuration that destroys unattached sessions cannot
+  kill it; chained in the same invocation as `new-session`, that `set-option`
+  answered "no such session" in CI;
 - every 2 s for up to 120 s the daemon checks that the session exists and
   that `#{pane_current_command}` is not a shell (two consecutive "stopped"
   polls, or a vanished session, mean `harness_exited`), then matches the
