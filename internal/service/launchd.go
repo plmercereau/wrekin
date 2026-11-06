@@ -13,8 +13,8 @@ import (
 
 const launchdLabel = "io.platyplus.wrekin"
 
-// LaunchdPlist renders the LaunchAgent for the given binary.
-func LaunchdPlist(binary, logPath string) string {
+// LaunchdPlist renders the LaunchAgent for the given spec and log file.
+func LaunchdPlist(spec Spec, logPath string) string {
 	esc := func(s string) string {
 		var b strings.Builder
 		_ = xml.EscapeText(&b, []byte(s))
@@ -31,6 +31,11 @@ func LaunchdPlist(binary, logPath string) string {
 		<string>%s</string>
 		<string>daemon</string>
 	</array>
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>PATH</key>
+		<string>%s</string>
+	</dict>
 	<key>RunAtLoad</key>
 	<true/>
 	<key>KeepAlive</key>
@@ -41,7 +46,7 @@ func LaunchdPlist(binary, logPath string) string {
 	<string>%s</string>
 </dict>
 </plist>
-`, launchdLabel, esc(binary), esc(logPath), esc(logPath))
+`, launchdLabel, esc(spec.Binary), esc(spec.Path), esc(logPath), esc(logPath))
 }
 
 func launchdPlistPath() string {
@@ -65,7 +70,7 @@ func (l launchd) run(args ...string) error {
 	return nil
 }
 
-func (l launchd) Install(binary string) error {
+func (l launchd) Install(spec Spec) error {
 	path := launchdPlistPath()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
@@ -73,7 +78,7 @@ func (l launchd) Install(binary string) error {
 	if err := os.MkdirAll(paths.StateDir(), 0o700); err != nil {
 		return err
 	}
-	return os.WriteFile(path, []byte(LaunchdPlist(binary, launchdLogPath())), 0o644)
+	return os.WriteFile(path, []byte(LaunchdPlist(spec, launchdLogPath())), 0o644)
 }
 
 // Start loads the agent; RunAtLoad starts the daemon.

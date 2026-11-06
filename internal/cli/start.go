@@ -3,7 +3,6 @@ package cli
 import (
 	"context"
 	"fmt"
-	"os"
 	"os/signal"
 	"syscall"
 
@@ -23,11 +22,11 @@ func newStartCommand(a *app) *cobra.Command {
 				return runDaemon(cmd.Context(), a)
 			}
 			mgr := service.Detect()
-			exe, err := os.Executable()
+			binary, err := service.BinaryPath()
 			if err != nil {
 				return err
 			}
-			if err := mgr.Install(exe); err != nil {
+			if err := mgr.Install(service.Spec{Binary: binary, Path: service.ServicePath()}); err != nil {
 				return err
 			}
 			if err := mgr.Start(); err != nil {

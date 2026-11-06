@@ -18,7 +18,7 @@ type Status struct {
 // Manager controls one service implementation.
 type Manager interface {
 	Name() string
-	Install(binary string) error
+	Install(spec Spec) error
 	Start() error
 	Stop() error
 	Status() (Status, error)
@@ -47,7 +47,7 @@ type none struct{}
 var errNoManager = errors.New("no user service manager found; run `wrekin start --foreground` instead")
 
 func (none) Name() string            { return "none" }
-func (none) Install(string) error    { return errNoManager }
+func (none) Install(Spec) error      { return errNoManager }
 func (none) Start() error            { return errNoManager }
 func (none) Stop() error             { return errNoManager }
 func (none) Status() (Status, error) { return Status{}, nil }

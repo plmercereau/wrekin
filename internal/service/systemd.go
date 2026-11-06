@@ -10,8 +10,11 @@ import (
 
 const systemdUnitName = "wrekin.service"
 
-// SystemdUnit renders the user unit for the given binary.
-func SystemdUnit(binary string) string {
+// SystemdUnit renders the user unit for the given spec. The PATH is quoted
+// for systemd's Environment= syntax; a unit path never contains a double
+// quote or a newline, which the renderer refuses rather than escapes.
+func SystemdUnit(spec Spec) string {
+	path := strings.NewReplacer("\"", "", "\n", "").Replace(spec.Path)
 	return fmt.Sprintf(`[Unit]
 Description=Wrekin node agent
 After=network-online.target
@@ -20,12 +23,13 @@ Wants=network-online.target
 [Service]
 Type=simple
 ExecStart=%s daemon
+Environment="PATH=%s"
 Restart=on-failure
 RestartSec=5
 
 [Install]
 WantedBy=default.target
-`, binary)
+`, spec.Binary, path)
 }
 
 func systemdUnitPath() string {
@@ -49,12 +53,12 @@ func (s systemd) run(args ...string) error {
 	return nil
 }
 
-func (s systemd) Install(binary string) error {
+func (s systemd) Install(spec Spec) error {
 	path := systemdUnitPath()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	if err := os.WriteFile(path, []byte(SystemdUnit(binary)), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(SystemdUnit(spec)), 0o644); err != nil {
 		return err
 	}
 	if err := s.run("daemon-reload"); err != nil {
