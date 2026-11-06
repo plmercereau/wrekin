@@ -94,7 +94,7 @@ to that repository. The `homebrew` job of `release.yml` commits
 
 | Secret | Used by | Purpose |
 |---|---|---|
-| `HOMEBREW_TAP_GITHUB_TOKEN` | `release.yml`, `homebrew` job | A fine-grained personal access token with *Contents: read and write* on `plmercereau/homebrew-tap` only. The default `GITHUB_TOKEN` cannot push to another repository. |
+| `HOMEBREW_TAP_DEPLOY_KEY` | `release.yml`, `homebrew` job | The private half of a write deploy key of `plmercereau/homebrew-tap`. The default `GITHUB_TOKEN` cannot push to another repository. Created with: `ssh-keygen -t ed25519 -N '' -C wrekin-release -f tap_key && gh repo deploy-key add tap_key.pub -R plmercereau/homebrew-tap -w -t wrekin-release && gh secret set HOMEBREW_TAP_DEPLOY_KEY -R plmercereau/wrekin < tap_key && rm tap_key tap_key.pub`. |
 
 `GITHUB_TOKEN` is provided by GitHub Actions; the `goreleaser` job asks for
 `contents: write` so it can create the release, the `homebrew` job only
