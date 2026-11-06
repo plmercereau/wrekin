@@ -372,9 +372,11 @@ func (r *Runner) prepare(jobID string) {
 	}
 	job.ClonePath = r.deps.Policy.ProposeClonePath(ref.Name)
 	job.AttentionReason = reasonClone
+	// One approval covers the clone and the trust the harness needs to run in
+	// it (ApprovedAt skips the trust prompt), so the message names both.
 	job.Attention = &protocol.Attention{
 		Kind:          protocol.AttentionApproveRepository,
-		Message:       fmt.Sprintf("The repository %s is not checked out under an allowed directory. Approve to clone it into %s.", ref.URL, job.ClonePath),
+		Message:       fmt.Sprintf("The repository %s is not checked out under an allowed directory. Approve to clone it into %s and to mark it as trusted for Claude Code (no permission bypass).", ref.URL, job.ClonePath),
 		RepositoryURL: ref.URL,
 		ProposedPath:  job.ClonePath,
 	}

@@ -138,6 +138,11 @@ func TestTeleportUnknownRepositoryNeedsAttentionWithProposedPath(t *testing.T) {
 	if j.Attention.RepositoryURL != "https://github.com/plmercereau/absent" || j.Attention.Message == "" {
 		t.Errorf("attention = %+v", j.Attention)
 	}
+	// One approval both clones and trusts the directory for the harness; the
+	// message must say so (spec section 5.7).
+	if !strings.Contains(j.Attention.Message, "trusted") || !strings.Contains(j.Attention.Message, j.Attention.ProposedPath) {
+		t.Errorf("the clone message must name the trust it grants and the path: %q", j.Attention.Message)
+	}
 	if e.term.launchCount() != 0 {
 		t.Error("nothing may be launched before approval")
 	}
