@@ -6,7 +6,7 @@
 // push to main, and `bun run build` (scripts/render-wrangler.ts) writes
 // wrangler.deploy.json from this file plus two build variables, the database's
 // id (WREKIN_D1_DATABASE_ID) and the public URL (WREKIN_BASE_URL), before Vite
-// builds the Worker from it into dist/wrekin/. The values below for those two
+// builds the Worker from it into dist/server/. The values below for those two
 // are for local development only.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
