@@ -171,3 +171,51 @@ v2 behind `requireMcpAuth` (POST only; the handler's `stateless` posture keeps
 Its id, account, name, public key, agent version, platform string and
 created/last-seen timestamps. Never a private key, a token or any terminal
 output; nothing in an MCP response is raw terminal output either.
+
+## Security posture
+
+What the Worker never stores: a node's private key (the node proves
+possession by signing a per-connection nonce and, for `wrekin logout`, a
+fresh timestamp), a Claude Code session's content, terminal output, or an
+OAuth client secret of its own (the MCP clients are public clients with
+PKCE). Public keys are stored in canonical base64, so one key has one row
+whatever the agent's spelling.
+
+Account linking (`src/auth.ts`): one person may sign in with GitHub one
+day and Google the next and land on the same Wrekin account, but no
+provider is `trusted`. Better Auth then links a second provider to the
+user with the same e-mail only when that provider reports the e-mail as
+verified; naming a provider as trusted would link on an unverified e-mail,
+which both GitHub and Google can issue.
+
+Dynamic Client Registration is open: Claude's remote MCP connector
+registers itself (RFC 7591) and the Client ID Metadata Documents
+alternative does not run on Workers, so anyone can register a client with
+any name and any redirect URI. The consent page therefore shows the host
+the authorization will be sent to next to the self-declared name, and
+`MCP_ALLOWED_REDIRECT_HOSTS` (see Deploy) bounds that host when set.
+Consent cannot be skipped and PKCE cannot be weakened by a registering
+client.
+
+`POST /api/nodes` is the one state-changing route a browser's cookie
+session can reach outside Better Auth's own origin check: it requires
+`Content-Type: application/json` (415 otherwise) and, for a cookie
+session, an `Origin` equal to `BASE_URL` or a `Sec-Fetch-Site` of
+`same-origin`/`none` when either header is present (403 otherwise). The
+Go agent authenticates with `Authorization: Bearer`, which the rule leaves
+alone, and the device-flow session behind that bearer is revoked by the
+relay as soon as the node row is written. Removing a node, from the page
+or by signed unregistration, closes its live socket with `4404`. Node
+names are letters, digits, spaces, dots, underscores and dashes, never
+`node_…`; the relay checks every command's parameters against the
+protocol schemas before anything leaves for a node, and bounds the MCP
+arguments.
+
+Not done yet: rate limiting. `/connect` costs a D1 lookup and a Durable
+Object wake-up per attempt, `/api/nodes/unregister` a signature check,
+and Better Auth's default limiter is per-isolate memory, so
+`/api/auth/device/*` and `/api/auth/oauth2/register` (unbounded
+`oauthClient` rows) are limited by nothing durable. The intended fix is a
+Cloudflare rate-limit binding in front of those four paths, answering 429
+and closing WebSocket attempts with `4429`, a code the protocol reserves
+and the relay never produces today.
