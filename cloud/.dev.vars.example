@@ -1,0 +1,11 @@
+# Copy to .dev.vars for `bun run dev`. Never commit .dev.vars.
+# Local base URL; the OAuth callback URLs become <BASE_URL>/api/auth/callback/<provider>.
+BASE_URL=http://localhost:8787
+# Any random string of 32+ characters: `openssl rand -base64 32`.
+BETTER_AUTH_SECRET=replace-with-32-random-characters-at-least
+# OAuth apps registered with callback http://localhost:8787/api/auth/callback/github
+GITHUB_CLIENT_ID=
+GITHUB_CLIENT_SECRET=
+# ... and http://localhost:8787/api/auth/callback/google
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=

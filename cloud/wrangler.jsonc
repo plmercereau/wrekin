@@ -1,0 +1,28 @@
+// Wrangler configuration for the Wrekin relay.
+// The D1 database and the custom domain are created by the platyplus/infrastructure
+// stack; paste the database id below before the first deploy.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "wrekin",
+  "main": "src/index.ts",
+  // Latest date supported by the workerd bundled with wrangler 4.158 (1.20261104.1).
+  "compatibility_date": "2026-11-04",
+  "compatibility_flags": ["nodejs_compat"],
+  "vars": {
+    "BASE_URL": "https://wrekin.platyplus.io"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "wrekin",
+      "database_id": "REPLACE_WITH_D1_ID",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [{ "name": "ACCOUNT_HUB", "class_name": "AccountHub" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["AccountHub"] }],
+  "routes": [{ "pattern": "wrekin.platyplus.io", "custom_domain": true }],
+  "observability": { "enabled": true }
+}

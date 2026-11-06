@@ -1,0 +1,33 @@
+{
+  "name": "wrekin-cloud",
+  "private": true,
+  "type": "module",
+  "description": "The Wrekin relay: Hono + Better Auth + a per-account Durable Object on Cloudflare Workers",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "db:generate": "bunx @better-auth/cli@latest generate --config src/auth.config.ts --output migrations/0001_auth.sql -y",
+    "db:migrate:local": "wrangler d1 migrations apply wrekin --local",
+    "db:migrate:remote": "wrangler d1 migrations apply wrekin --remote",
+    "test:node": "vitest run --config vitest.node.config.ts"
+  },
+  "dependencies": {
+    "@better-auth/mcp": "^1.7.18",
+    "@hono/mcp": "^0.3.5",
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "better-auth": "^1.7.18",
+    "hono": "^4.13.16",
+    "kysely": "^0.29.8",
+    "kysely-d1": "^0.4.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "^1.6.0",
+    "@cloudflare/workers-types": "^5.20261104.1",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.0",
+    "wrangler": "^4.158.0"
+  }
+}
