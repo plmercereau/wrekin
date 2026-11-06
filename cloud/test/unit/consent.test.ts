@@ -74,7 +74,7 @@ async function registerClient(fetcher: Fetcher, redirectUri: string): Promise<st
 }
 
 /** Where `/oauth2/authorize` sends a signed-in user for `clientId` and `redirectUri`. */
-async function authorize(fetcher: Fetcher, headers: Record<string, string>, clientId: string, redirectUri: string): Promise<URL> {
+async function authorize(fetcher: Fetcher, headers: Record<string, string>, clientId: string, redirectUri: string, scope = "openid"): Promise<URL> {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode("verifier-".repeat(6)));
   const challenge = btoa(String.fromCharCode(...new Uint8Array(digest)))
     .replace(/\+/g, "-")
@@ -84,7 +84,7 @@ async function authorize(fetcher: Fetcher, headers: Record<string, string>, clie
     client_id: clientId,
     redirect_uri: redirectUri,
     response_type: "code",
-    scope: "openid",
+    scope,
     state: "opaque-state",
     code_challenge: challenge,
     code_challenge_method: "S256",
@@ -126,5 +126,32 @@ describe("the consent page's signed query", () => {
     const allowed = await authorize(fetcher, headers, claude, "https://claude.ai/api/mcp/auth_callback");
     expect(allowed.pathname).toBe("/consent");
     expect(redirectUriHost(allowed.searchParams.get("redirect_uri"))).toBe("claude.ai");
+  });
+});
+
+// Claude's remote-connector client registers and authorizes with the scope
+// "claudeai"; a server that refuses it fails the connector at registration
+// ("Couldn't register with … sign-in service").
+describe("Claude's connector scope", () => {
+  it("registers a client asking for scope claudeai and reaches consent with it", async () => {
+    const { fetcher, services } = nodeWorker();
+    const redirectUri = "https://claude.ai/api/mcp/auth_callback";
+    const res = await fetcher("/api/auth/oauth2/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        client_name: "Claude",
+        redirect_uris: [redirectUri],
+        token_endpoint_auth_method: "none",
+        grant_types: ["authorization_code", "refresh_token"],
+        response_types: ["code"],
+        scope: "claudeai",
+      }),
+    });
+    expect(res.status, await res.clone().text()).toBe(201);
+    const { client_id } = (await res.json()) as { client_id: string };
+    const { headers } = await createTestSession(services.auth, "claude-scope-user");
+    const target = await authorize(fetcher, headers, client_id, redirectUri, "claudeai");
+    expect(target.pathname).toBe("/consent");
   });
 });
