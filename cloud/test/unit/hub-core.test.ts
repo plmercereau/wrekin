@@ -29,6 +29,7 @@ class FakeSocket implements HubSocket {
 function makeHub(options: { handshakeTimeoutMs?: number } = {}) {
   const sockets: FakeSocket[] = [];
   const touched: Array<{ nodeId: string; at: string }> = [];
+  const presence = { changes: 0 };
   const core = new HubCore(
     {
       sockets: () => sockets.filter((s) => s.closed === null),
@@ -37,6 +38,9 @@ function makeHub(options: { handshakeTimeoutMs?: number } = {}) {
       now: () => new Date("2026-11-06T00:00:00Z"),
       onAuthenticated: async (nodeId, at) => {
         touched.push({ nodeId, at });
+      },
+      onPresenceChanged: () => {
+        presence.changes++;
       },
     },
     options,
@@ -48,7 +52,7 @@ function makeHub(options: { handshakeTimeoutMs?: number } = {}) {
     return socket;
   };
   const frame = (socket: FakeSocket, message: unknown) => core.onMessage(socket, JSON.stringify(message));
-  return { core, sockets, touched, open, frame };
+  return { core, sockets, touched, presence, open, frame };
 }
 
 /** Runs the whole handshake for `nodeId` with `key` and returns the authenticated socket. */
@@ -361,5 +365,41 @@ describe("commands", () => {
     expect(socket.closed).toBeNull();
     await hub.frame(socket, { v: 1, type: "result", id: "cmd_x", ok: false, error: { code: "made_up", message: "x" } });
     expect(socket.closed?.code).toBe(closeCodes.protocolError);
+  });
+});
+
+// The nodes page refetches on each of these (src/live.ts): every change of the online set
+// must be said, and a socket that never authenticated changes nothing.
+describe("presence changes", () => {
+  it("are said when a node authenticates, when its socket closes and when it is evicted", async () => {
+    const key = await generateNodeKey();
+    const hub = makeHub();
+    const socket = await connectAndAuth(hub, "node_1", key);
+    expect(hub.presence.changes).toBe(1);
+    hub.core.onClose(socket, 1000, "bye");
+    socket.closed = { code: 1000, reason: "bye" };
+    expect(hub.presence.changes).toBe(2);
+
+    await connectAndAuth(hub, "node_1", key);
+    expect(hub.presence.changes).toBe(3);
+    hub.core.evict("node_1");
+    expect(hub.presence.changes).toBe(4);
+  });
+
+  it("are said for an eviction of a node with no socket, since its row is gone", () => {
+    const hub = makeHub();
+    hub.core.evict("node_gone");
+    expect(hub.presence.changes).toBe(1);
+  });
+
+  it("are not said for a socket that fails or closes during its handshake", async () => {
+    const key = await generateNodeKey();
+    const hub = makeHub();
+    const garbage = hub.open("node_1", key.publicKey);
+    await hub.core.onMessage(garbage, "{not json");
+    hub.core.onClose(garbage, 4400, "malformed frame");
+    const quiet = hub.open("node_1", key.publicKey);
+    hub.core.onClose(quiet, 1006, "gone");
+    expect(hub.presence.changes).toBe(0);
   });
 });

@@ -4,6 +4,7 @@ import { encodeBase64, verifyEd25519 } from "../crypto";
 import { getDb } from "../db/kysely";
 import { KyselyNodeStore } from "../db/nodes";
 import type { Env } from "../env";
+import { nodesChangedFrame } from "../live";
 import { commandNames } from "../protocol";
 import { HubCore, type Attachment, type HubSocket } from "./core";
 import { ACCOUNT_ID_HEADER, PUBLIC_KEY_HEADER } from "./headers";
@@ -20,6 +21,9 @@ const commandRequestSchema = z.object({
   timeoutMs: z.number().int().positive().max(60_000).optional(),
 });
 
+/** The tag of the nodes page's sockets (src/live.ts); node sockets are tagged with their node id, `node_…`. */
+const WATCH_TAG = "watch";
+
 const wrap = (ws: WebSocket): HubSocket => ({
   send: (data) => ws.send(data),
   close: (code, reason) => ws.close(code, reason),
@@ -30,6 +34,8 @@ const wrap = (ws: WebSocket): HubSocket => ({
 /**
  * One instance per account. Owns the node WebSockets (Hibernation API) and routes
  * commands to them; the logic lives in HubCore, this class adapts Cloudflare's APIs.
+ * It also holds the nodes page's sockets ("watchers"), which only ever receive the
+ * `nodes.changed` hint and never reach HubCore.
  */
 export class AccountHub extends DurableObject<Env> {
   private readonly core: HubCore;
@@ -39,12 +45,28 @@ export class AccountHub extends DurableObject<Env> {
     // Liveness pings are answered by the runtime without waking the object.
     ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('{"v":1,"type":"ping"}', '{"v":1,"type":"pong"}'));
     this.core = new HubCore({
-      sockets: () => ctx.getWebSockets().map(wrap),
+      sockets: () => ctx.getWebSockets().filter((ws) => !this.isWatcher(ws)).map(wrap),
       verify: verifyEd25519,
       randomNonce: () => encodeBase64(crypto.getRandomValues(new Uint8Array(32))),
       now: () => new Date(),
       onAuthenticated: (nodeId, at) => new KyselyNodeStore(getDb(env)).touchNode(nodeId, at),
+      onPresenceChanged: () => this.broadcastChanged(),
     });
+  }
+
+  private isWatcher(ws: WebSocket): boolean {
+    return this.ctx.getTags(ws).includes(WATCH_TAG);
+  }
+
+  /** Tells every open nodes page of the account to fetch its list again. */
+  private broadcastChanged(): void {
+    for (const ws of this.ctx.getWebSockets(WATCH_TAG)) {
+      try {
+        ws.send(nodesChangedFrame);
+      } catch {
+        // closing; the runtime drops it
+      }
+    }
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -63,6 +85,23 @@ export class AccountHub extends DurableObject<Env> {
       this.ctx.acceptWebSocket(server, [nodeId]);
       this.core.onOpen(wrap(server), { accountId, nodeId, publicKey });
       return new Response(null, { status: 101, webSocket: client });
+    }
+
+    // The nodes page of a signed-in user of this account; the Worker checked the session and the origin.
+    if (url.pathname === "/watch") {
+      if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") {
+        return new Response("expected a WebSocket upgrade", { status: 426 });
+      }
+      const pair = new WebSocketPair();
+      const [client, server] = [pair[0], pair[1]];
+      this.ctx.acceptWebSocket(server, [WATCH_TAG]);
+      return new Response(null, { status: 101, webSocket: client });
+    }
+
+    // Something the hub does not see happened to the account's nodes (a registration).
+    if (url.pathname === "/nodes/changed" && request.method === "POST") {
+      this.broadcastChanged();
+      return Response.json({ ok: true });
     }
 
     if (url.pathname === "/nodes/online" && request.method === "GET") {
@@ -87,14 +126,18 @@ export class AccountHub extends DurableObject<Env> {
   }
 
   async webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): Promise<void> {
+    // A page has nothing to say; its keep-alive is answered by the runtime.
+    if (this.isWatcher(ws)) return;
     await this.core.onMessage(wrap(ws), message);
   }
 
   async webSocketClose(ws: WebSocket, code: number, reason: string, _wasClean: boolean): Promise<void> {
+    if (this.isWatcher(ws)) return;
     this.core.onClose(wrap(ws), code, reason);
   }
 
   async webSocketError(ws: WebSocket, error: unknown): Promise<void> {
+    if (this.isWatcher(ws)) return;
     console.warn("hub: socket error", error instanceof Error ? error.message : String(error));
     this.core.onClose(wrap(ws), 1006, "error");
   }

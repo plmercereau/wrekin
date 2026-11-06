@@ -223,6 +223,29 @@ export function nodesSuite(fetcher: Fetcher, newSession: SessionFactory, listNod
     });
   });
 
+  describe("the live channel, GET /api/nodes/live", () => {
+    const upgrade = { Upgrade: "websocket", origin: new URL(baseURL).origin };
+
+    it("requires a WebSocket upgrade", async () => {
+      const { cookieHeaders } = await newSession("live-plain");
+      const res = await fetcher("/api/nodes/live", { headers: { ...cookieHeaders, origin: new URL(baseURL).origin } });
+      expect(res.status).toBe(426);
+    });
+
+    it("refuses another origin, and a request with no origin at all, with 403", async () => {
+      const { cookieHeaders } = await newSession("live-cross");
+      const foreign = await fetcher("/api/nodes/live", { headers: { ...cookieHeaders, ...upgrade, origin: "https://attacker.example" } });
+      expect(foreign.status).toBe(403);
+      const bare = await fetcher("/api/nodes/live", { headers: { ...cookieHeaders, Upgrade: "websocket" } });
+      expect(bare.status).toBe(403);
+    });
+
+    it("refuses an anonymous page with 401", async () => {
+      const res = await fetcher("/api/nodes/live", { headers: upgrade });
+      expect(res.status).toBe(401);
+    });
+  });
+
   describe("JSON errors for machine clients", () => {
     it("answers 404 as JSON under /api and /mcp", async () => {
       for (const path of ["/api/nothing", "/mcp/nothing"]) {

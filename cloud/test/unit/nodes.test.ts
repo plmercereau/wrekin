@@ -42,3 +42,24 @@ describe("nodes.list with the hub", () => {
     });
   });
 });
+
+describe("the live channel with the hub", () => {
+  it("hands a same-origin page's upgrade to its own account's hub", async () => {
+    const { userId, cookieHeaders } = await createTestSession(services.auth, "live-own");
+    const res = await fetcher("/api/nodes/live", { headers: { ...cookieHeaders, Upgrade: "websocket", origin: new URL(TEST_BASE_URL).origin } });
+    expect(await res.json()).toEqual({ watching: userId });
+    expect(hub.watched.at(-1)).toBe(userId);
+  });
+
+  it("is told about a registration, which the hub cannot see", async () => {
+    const { userId, headers } = await createTestSession(services.auth, "live-register");
+    const key = await generateNodeKey();
+    const res = await fetcher("/api/nodes", {
+      method: "POST",
+      headers: { "content-type": "application/json", ...headers },
+      body: JSON.stringify({ name: "fresh", publicKey: key.publicKey }),
+    });
+    expect(res.status).toBe(201);
+    expect(hub.changed).toContain(userId);
+  });
+});
