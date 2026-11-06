@@ -46,14 +46,19 @@ installer does not.
 1. Make sure `main` is green (the `CI` workflow: Go tests on Linux and
    macOS, the Worker tests, `goreleaser check`, `nix flake check` and
    `nix build`, the Homebrew formula render).
-2. Tag and push:
+2. Set `VERSION` (repository root) to the version being released, without
+   the `v`, in a commit that reaches `main`. The Nix flake reads its version
+   from that file, since a flake cannot see the tag it was fetched by, so
+   `nix run github:plmercereau/wrekin/v0.2.5 -- --version` prints `0.2.5`.
+3. Tag that commit and push:
 
    ```sh
-   git tag -a v0.1.0 -m "v0.1.0"
-   git push origin v0.1.0
+   git tag -a "v$(cat VERSION)" -m "v$(cat VERSION)"
+   git push origin "v$(cat VERSION)"
    ```
 
-3. The `Release` workflow (`.github/workflows/release.yml`) runs
+4. The `Release` workflow (`.github/workflows/release.yml`) first checks
+   that `VERSION` matches the tag and fails otherwise, then runs
    `goreleaser release --clean`:
    - builds the four binaries with `CGO_ENABLED=0`, `-trimpath`, a
      reproducible module timestamp and `-X main.version=<tag without v>`,
@@ -67,7 +72,7 @@ installer does not.
    `packaging/homebrew/render.sh`, checks it with `ruby -c`, and pushes it
    to the tap. Pre-release tags (`v0.2.0-rc1`) are published on GitHub,
    marked as pre-releases, and not pushed to the tap.
-4. Check `brew install plmercereau/tap/wrekin` and
+5. Check `brew install plmercereau/tap/wrekin` and
    `nix run github:plmercereau/wrekin/v0.1.0 -- --version` on a machine.
 
 Version numbers follow semantic versioning; the MVP is `0.x`.

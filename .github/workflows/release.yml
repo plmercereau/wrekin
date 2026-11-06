@@ -20,6 +20,17 @@ jobs:
         with:
           # The changelog is the commit log since the previous tag.
           fetch-depth: 0
+      - name: Check that VERSION matches the tag
+        # The Nix flake reads its version from VERSION (it cannot see the
+        # tag): a tag that disagrees would publish archives and a formula of
+        # one version and a flake of another.
+        run: |
+          want="${GITHUB_REF_NAME#v}"
+          have="$(tr -d '[:space:]' < VERSION)"
+          if [ "$have" != "$want" ]; then
+            echo "::error file=VERSION::VERSION says $have but the tag is $GITHUB_REF_NAME; bump VERSION to $want and tag that commit"
+            exit 1
+          fi
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod

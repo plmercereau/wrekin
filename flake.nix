@@ -18,10 +18,12 @@
       ];
       forAllSystems = f: lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
 
-      # A checkout is 0.0.0-<short rev>; tagged releases are built by
-      # GoReleaser. `nix run github:plmercereau/wrekin/v0.1.0` still builds
-      # from the tag's sources, with that tag's revision as the version.
-      version = "0.0.0-${self.shortRev or self.dirtyShortRev or "dev"}";
+      # The version is the VERSION file's: a flake sees the commit, never the
+      # tag it was fetched by, so the version a release carries lives in the
+      # tree. A release bumps VERSION, then tags that commit v<VERSION>; the
+      # Release workflow refuses a tag that disagrees. A build from main
+      # between two releases carries the version being prepared.
+      version = lib.fileContents ./VERSION;
 
       mkWrekin = pkgs: pkgs.callPackage ./nix/package.nix { inherit version; };
 
