@@ -791,3 +791,28 @@ func TestLaunchNamesRemoteControlAfterTheCloudTitle(t *testing.T) {
 		t.Errorf("session = %+v", j.Session)
 	}
 }
+
+// A harness that exits at once leaves its last words in the pane: the job's
+// error carries them, the session is cleaned up. (Claude Code signed in with
+// another account than the cloud session's prints "Session not found".)
+func TestHarnessExitCarriesWhatTheHarnessSaid(t *testing.T) {
+	requireGit(t)
+	e := newEnv(t, nil)
+	checkout := filepath.Join(e.root, "wrekin")
+	initRepo(t, checkout, "git@github.com:plmercereau/wrekin.git")
+	e.harn.setTrusted(checkout, true)
+	job, jerr := e.runner.Teleport(context.Background(), teleportParams(15, "plmercereau/wrekin"))
+	if jerr != nil {
+		t.Fatal(jerr)
+	}
+	launched := e.waitLaunched(1)
+	e.term.setPane(launched.session, "Session not found: "+sessionID(15))
+	e.term.stop(launched.session)
+	j := e.waitState(job.ID, protocol.StateFailed)
+	if j.Error == nil || j.Error.Code != protocol.CodeHarnessExited || !strings.Contains(j.Error.Message, "Session not found") {
+		t.Fatalf("error = %+v", j.Error)
+	}
+	if exists, _ := e.term.Exists(launched.session); exists {
+		t.Error("the dead session must be killed once read")
+	}
+}

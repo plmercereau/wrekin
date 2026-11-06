@@ -188,3 +188,25 @@ func TestInputIdleOnlyForTheBareInputBox(t *testing.T) {
 		}
 	}
 }
+
+// What badger showed: Claude Code signed in with a work account, asked for a
+// cloud session of the personal one.
+func TestExitReasonNamesTheSignedInAccount(t *testing.T) {
+	fake := filepath.Join(t.TempDir(), "claude")
+	writeExecutable(t, fake, `#!/bin/sh
+echo '{"loggedIn": true, "authMethod": "claude.ai", "email": "me@work.example", "orgName": "Work"}'
+`)
+	c := New("", fake)
+	got := c.ExitReason(context.Background(), "\nSession not found: session_01CNrG8R96icVH9d15D1nvKk\n\nPane is dead (status 1)\n")
+	for _, want := range []string{"Claude Code said: Session not found: session_01CN", "signed in as me@work.example (Work)", "account that owns it"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("reason lacks %q: %q", want, got)
+		}
+	}
+	if got := c.ExitReason(context.Background(), "error: something else\n"); got != "Claude Code said: error: something else" {
+		t.Errorf("reason = %q", got)
+	}
+	if got := c.ExitReason(context.Background(), "\n\n"); got != "" {
+		t.Errorf("empty pane gave %q", got)
+	}
+}

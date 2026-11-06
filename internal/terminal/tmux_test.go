@@ -230,3 +230,26 @@ func TestSendLineTypesLiterally(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 	}
 }
+
+// A program that exits at once leaves its output in the pane (KeepOnExit),
+// which is how a harness's "Session not found" reaches the job's error.
+func TestLaunchKeepsTheLastWordsOfAProgramThatExits(t *testing.T) {
+	tm := newTestTmux(t)
+	session := fmt.Sprintf("wrekin-exit-%d", time.Now().UnixNano()%1e6)
+	if err := tm.Launch(context.Background(), session, os.TempDir(), []string{"sh", "-c", "sleep 0.5; echo Session not found; exit 1"}); err != nil {
+		t.Fatal(err)
+	}
+	defer tm.Kill(session)
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		running, _ := tm.Running(session)
+		pane, _ := tm.Capture(session, 20)
+		if !running && strings.Contains(pane, "Session not found") {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("running=%v pane:\n%s", running, pane)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+}

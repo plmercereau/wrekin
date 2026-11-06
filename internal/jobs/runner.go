@@ -729,6 +729,14 @@ func (r *Runner) launch(job *Job) {
 		return
 	}
 
+	// Once the session is up, a pane whose program exits goes with it again,
+	// as the user expects of a terminal (/exit closes the session).
+	defer func() {
+		if job.State == protocol.StateReady {
+			_ = r.deps.Term.KeepOnExit(session, false)
+		}
+	}()
+
 	deadline := time.Now().Add(r.deps.ReadyTimeout)
 	pattern := r.deps.Harness.ReadyPattern()
 	stoppedPolls := 0
@@ -747,8 +755,19 @@ func (r *Runner) launch(job *Job) {
 		}
 		if !exists || stoppedPolls >= 2 {
 			if r.deps.Harness.ExitedIsFailure() {
+				// The pane stayed with the harness's last words (KeepOnExit):
+				// they say why, which "it exited" alone never did.
+				message := "the harness exited before its prompt appeared; attach to the node and run it by hand to see why"
+				if exists {
+					if pane, err := r.deps.Term.Capture(session, 40); err == nil {
+						if reason := r.deps.Harness.ExitReason(r.ctx, pane); reason != "" {
+							message = "the harness exited before its prompt appeared. " + reason
+						}
+					}
+					_ = r.deps.Term.Kill(session)
+				}
 				job.Session = nil
-				r.fail(job, protocol.CodeHarnessExited, "the harness exited before its prompt appeared; attach to the node and run it by hand to see why", nil)
+				r.fail(job, protocol.CodeHarnessExited, message, nil)
 				return
 			}
 			job.Ready = &protocol.Ready{Confirmed: true, Detail: "the harness finished"}

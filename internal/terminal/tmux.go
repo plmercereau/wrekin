@@ -114,11 +114,23 @@ func (t *Tmux) Launch(ctx context.Context, session, workdir string, argv []strin
 		}
 		return fmt.Errorf("tmux new-session: %s", stderr)
 	}
-	// Best effort, in a call of its own: chained after new-session in the
+	// Best effort, in calls of their own: chained after new-session in the
 	// same invocation, tmux answered "no such session" for the session it had
-	// just created.
+	// just created. A harness that exits at once (Claude Code's "Session not
+	// found" takes a network round trip) leaves its last words in the pane.
+	_ = t.KeepOnExit(session, true)
 	_, _, _ = t.run(ctx, keepAliveArgs(session)...)
 	return nil
+}
+
+// KeepOnExit implements Terminal with the window's remain-on-exit.
+func (t *Tmux) KeepOnExit(session string, keep bool) error {
+	value := "off"
+	if keep {
+		value = "on"
+	}
+	_, _, err := t.run(nil, "set-option", "-w", "-t", paneTarget(session), "remain-on-exit", value)
+	return err
 }
 
 // Exists implements Terminal.
