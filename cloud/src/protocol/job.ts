@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { protocolErrorSchema } from "./errors";
+import type { CommandName } from "./messages";
 
 /** The six job states of PROTOCOL.md, "Job". */
 export const jobStates = ["accepted", "preparing", "needs_attention", "launching", "ready", "failed"] as const;
@@ -68,3 +69,15 @@ export type StatusParams = z.infer<typeof statusParamsSchema>;
 
 export const approveParamsSchema = z.object({ jobId: z.string().min(1), approved: z.boolean() });
 export type ApproveParams = z.infer<typeof approveParamsSchema>;
+
+/** `list_jobs` and `ping` take no parameters; unknown keys are dropped, as everywhere in the protocol. */
+export const emptyParamsSchema = z.object({});
+
+/** The parameters of each command, checked by the relay before the command leaves for the node. */
+export const commandParamsSchemas = {
+  teleport: teleportParamsSchema,
+  get_teleport_status: statusParamsSchema,
+  approve_repository: approveParamsSchema,
+  list_jobs: emptyParamsSchema,
+  ping: emptyParamsSchema,
+} as const satisfies Record<CommandName, z.ZodType<Record<string, unknown>>>;

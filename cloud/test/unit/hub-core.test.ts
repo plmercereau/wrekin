@@ -253,6 +253,28 @@ describe("commands", () => {
     expect(hub.core.online()).toHaveLength(2);
   });
 
+  it("refuses parameters the command's schema rejects without touching the socket", async () => {
+    const hub = makeHub();
+    const socket = await connectAndAuth(hub, "node_1", await generateNodeKey());
+    const before = socket.sent.length;
+    expect(await hub.core.command("node_1", "teleport", { harness: 1 }, 1000)).toMatchObject({ ok: false, error: { code: "invalid_params" } });
+    expect(await hub.core.command("node_1", "get_teleport_status", {}, 1000)).toMatchObject({ ok: false, error: { code: "invalid_params" } });
+    expect(await hub.core.command("node_1", "approve_repository", { jobId: "job_1", approved: "yes" }, 1000)).toMatchObject({ ok: false, error: { code: "invalid_params" } });
+    expect(socket.sent).toHaveLength(before);
+    // Invalid parameters are reported before the node's reachability.
+    expect(await hub.core.command("node_absent", "teleport", {}, 1000)).toMatchObject({ ok: false, error: { code: "invalid_params" } });
+  });
+
+  it("sends only the parameters the command's schema knows", async () => {
+    const hub = makeHub();
+    const socket = await connectAndAuth(hub, "node_1", await generateNodeKey());
+    const pending = hub.core.command("node_1", "teleport", { harness: "claude-code", cloudSessionId: "session_1", surprise: true }, 1000);
+    const sent = socket.last<{ id: string; params: Record<string, unknown> }>();
+    expect(sent.params).toEqual({ harness: "claude-code", cloudSessionId: "session_1" });
+    await hub.frame(socket, { v: 1, type: "result", id: sent.id, ok: true, data: null });
+    expect(await pending).toEqual({ ok: true, data: null });
+  });
+
   it("ignores a result for an unknown command id and a malformed result", async () => {
     const hub = makeHub();
     const socket = await connectAndAuth(hub, "node_1", await generateNodeKey());

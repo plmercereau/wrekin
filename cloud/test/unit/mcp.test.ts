@@ -96,6 +96,22 @@ describe("MCP tools", () => {
     expect(hub.commands).toHaveLength(0);
   });
 
+  it("bounds every string argument before anything reaches the hub", async () => {
+    const session = "session_01CNrG8QvmZWiHRpzs2xhqhN";
+    const before = hub.commands.length;
+    const refused = async (name: string, args: Record<string, unknown>, field: string) => {
+      const result = await call(name, args);
+      expect(result.isError, field).toBe(true);
+      expect(textOf(result), field).toContain(field);
+    };
+    await refused("teleport", { node: "x".repeat(257), session }, "node");
+    await refused("teleport", { node: "workstation", session: `${session}${"x".repeat(2048)}` }, "session");
+    await refused("teleport", { node: "workstation", session, repository: "r".repeat(2049) }, "repository");
+    await refused("teleport", { node: "workstation", session, directory: "d".repeat(2049) }, "directory");
+    await refused("get_teleport_status", { node: "workstation", jobId: "j".repeat(257) }, "jobId");
+    expect(hub.commands).toHaveLength(before);
+  });
+
   it("teleport to a node of another account answers unknown_node, never node_offline (Review Focus 5)", async () => {
     for (const ref of [theirs.id, "workstation-of-someone-else"]) {
       const result = await call("teleport", { node: ref, session: "session_01CNrG8QvmZWiHRpzs2xhqhN" });

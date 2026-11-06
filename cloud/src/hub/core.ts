@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { canonicalPublicKey, randomId } from "../crypto";
 import {
   authMessage,
@@ -6,6 +7,7 @@ import {
   closeCodes,
   command,
   COMMAND_TIMEOUT_MS,
+  commandParamsSchemas,
   envelopeSchema,
   errorFrame,
   HANDSHAKE_TIMEOUT_MS,
@@ -159,8 +161,16 @@ export class HubCore {
     }));
   }
 
-  /** Sends a command to `nodeId` and waits for its result, `node_offline` or `node_timeout`. */
+  /**
+   * Sends a command to `nodeId` and waits for its result, `node_offline` or `node_timeout`.
+   * The parameters are checked against the command's schema first (`invalid_params`), and
+   * only the keys that schema knows leave for the node.
+   */
   command(nodeId: string, name: CommandName, params: Record<string, unknown>, timeoutMs = COMMAND_TIMEOUT_MS): Promise<Result<unknown>> {
+    const checked = commandParamsSchemas[name].safeParse(params);
+    if (!checked.success) {
+      return Promise.resolve({ ok: false, error: { code: "invalid_params", message: `${name}: ${z.prettifyError(checked.error)}` } });
+    }
     const target = this.authedSocketOf(nodeId);
     if (!target) {
       return Promise.resolve({ ok: false, error: { code: "node_offline", message: "the node has no open connection" } });
@@ -173,7 +183,7 @@ export class HubCore {
       }, timeoutMs);
       this.pending.set(id, { nodeId, connectionId: target.attachment.connectionId, resolve, timer });
       try {
-        target.socket.send(JSON.stringify(command(id, name, params)));
+        target.socket.send(JSON.stringify(command(id, name, checked.data)));
       } catch {
         clearTimeout(timer);
         this.pending.delete(id);

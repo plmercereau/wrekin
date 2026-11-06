@@ -3,6 +3,8 @@ import {
   authMessage,
   challenge,
   command,
+  commandNames,
+  commandParamsSchemas,
   commandSchema,
   errorCodes,
   helloSchema,
@@ -131,6 +133,15 @@ describe("jobs and params", () => {
     expect(
       teleportParamsSchema.parse({ harness: "claude-code", cloudSessionId: "session_1", relaunch: true }),
     ).toEqual({ harness: "claude-code", cloudSessionId: "session_1", relaunch: true });
+  });
+
+  it("has a parameter schema for every command, empty for list_jobs and ping", () => {
+    expect(Object.keys(commandParamsSchemas).sort()).toEqual([...commandNames].sort());
+    expect(commandParamsSchemas.list_jobs.safeParse({}).success).toBe(true);
+    expect(commandParamsSchemas.ping.safeParse({ extra: 1 }).success).toBe(true);
+    expect(commandParamsSchemas.get_teleport_status.safeParse({}).success).toBe(false);
+    expect(commandParamsSchemas.approve_repository.safeParse({ jobId: "job_1", approved: true }).success).toBe(true);
+    expect(commandParamsSchemas.teleport.safeParse({ harness: 1 }).success).toBe(false);
   });
 
   it("lists every error code of the protocol table", () => {

@@ -96,8 +96,13 @@ export async function resolveNode(ctx: ToolContext, ref: string): Promise<NodeRe
   return ctx.nodes.findNode(ctx.accountId, ref.trim());
 }
 
-const nodeArg = z.string().min(1).describe("The target machine, by name or node id, as list_nodes returns it.");
-const jobIdArg = z.string().min(1).describe("The job id returned by teleport.");
+// Upper bounds on what the relay accepts before anything reaches a node: an id or a name
+// is short; a URL, a path or a session reference is at most a couple of kilobytes.
+const nodeArg = z.string().min(1).max(256).describe("The target machine, by name or node id, as list_nodes returns it.");
+const jobIdArg = z.string().min(1).max(256).describe("The job id returned by teleport.");
+const sessionArg = z.string().min(1).max(2048).describe("This Claude Code Cloud session: its id (session_…) or its https://claude.ai/code/session_… URL.");
+const repositoryArg = z.string().min(1).max(2048).describe("The Git repository the session works on: a URL or owner/name on GitHub. Helps the machine find or clone the checkout.");
+const directoryArg = z.string().min(1).max(2048).describe("A directory on the machine to use, under one of its allowed roots. `~` is expanded there.");
 
 export function registerTools(server: McpServer, ctx: ToolContext): void {
   server.registerTool(
@@ -137,9 +142,9 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
         "Calling teleport again for the same session returns the existing job; pass relaunch true only when the previous session is gone (error session_gone).",
       inputSchema: z.object({
         node: nodeArg,
-        session: z.string().min(1).describe("This Claude Code Cloud session: its id (session_…) or its https://claude.ai/code/session_… URL."),
-        repository: z.string().min(1).optional().describe("The Git repository the session works on: a URL or owner/name on GitHub. Helps the machine find or clone the checkout."),
-        directory: z.string().min(1).optional().describe("A directory on the machine to use, under one of its allowed roots. `~` is expanded there."),
+        session: sessionArg,
+        repository: repositoryArg.optional(),
+        directory: directoryArg.optional(),
         relaunch: z.boolean().optional().describe("Launch again when the previous session of this job has disappeared (after a session_gone error)."),
       }),
     },

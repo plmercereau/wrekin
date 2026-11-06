@@ -106,6 +106,19 @@ describe("AccountHub", () => {
     expect(await pending).toEqual({ ok: true, data: { at: "now" } });
   });
 
+  it("refuses parameters the command's schema rejects without sending anything to the node", async () => {
+    const key = await generateNodeKey();
+    const socket = await authenticate("acc_params", "node_params", key);
+    const hub = hubFor(env, "acc_params");
+    expect(await hub.command("node_params", "teleport", { harness: 1 }, 2000)).toMatchObject({ ok: false, error: { code: "invalid_params" } });
+    // The next frame the node sees is the valid command that follows, so nothing was sent for the invalid one.
+    const pending = hub.command("node_params", "ping", {}, 2000);
+    const command = await socket.next();
+    expect(command).toMatchObject({ v: 1, type: "command", name: "ping" });
+    socket.send({ v: 1, type: "result", id: command.id, ok: true, data: null });
+    expect(await pending).toEqual({ ok: true, data: null });
+  });
+
   it("answers node_offline at once for a node without a socket", async () => {
     const result = await hubFor(env, "acc_offline").command("node_absent", "ping", {}, 2000);
     expect(result).toMatchObject({ ok: false, error: { code: "node_offline" } });
