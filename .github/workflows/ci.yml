@@ -90,7 +90,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: packaging/homebrew/render.sh 0.1.0 packaging/homebrew/testdata/checksums.txt > wrekin.rb
+      # `sh` rather than the executable bit: the branch was published through the
+      # GitHub API, which keeps file contents but not modes.
+      - run: sh packaging/homebrew/render.sh 0.1.0 packaging/homebrew/testdata/checksums.txt > wrekin.rb
       - run: ruby -c wrekin.rb
       - name: Every placeholder is substituted
         run: "! grep -n '@' wrekin.rb"

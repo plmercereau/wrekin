@@ -49,7 +49,7 @@ jobs:
         run: |
           version="${GITHUB_REF_NAME#v}"
           mkdir -p tap/Formula
-          packaging/homebrew/render.sh "$version" dist/checksums.txt > tap/Formula/wrekin.rb
+          sh packaging/homebrew/render.sh "$version" dist/checksums.txt > tap/Formula/wrekin.rb
           ruby -c tap/Formula/wrekin.rb
       - name: Push it to the tap
         working-directory: tap

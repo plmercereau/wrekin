@@ -1,7 +1,7 @@
 #!/bin/sh
 # Renders the Homebrew formula for one release.
 #
-#   packaging/homebrew/render.sh <version> <checksums.txt> > Formula/wrekin.rb
+#   sh packaging/homebrew/render.sh <version> <checksums.txt> > Formula/wrekin.rb
 #
 # <version> is the tag without its leading v (0.1.0); <checksums.txt> is the
 # file GoReleaser writes next to the archives (sha256 and file name per line).
