@@ -125,11 +125,16 @@ func TestTmuxQuotesArguments(t *testing.T) {
 	}
 }
 
-func TestLaunchArgsKeepDetachedSessionAlive(t *testing.T) {
+func TestLaunchArgsAndKeepAliveArgs(t *testing.T) {
 	got := strings.Join(launchArgs("wrekin-abc", "/w", []string{"claude", "--teleport", "s"}), " ")
-	want := "new-session -d -s wrekin-abc -c /w 'claude' '--teleport' 's' ; set-option -t =wrekin-abc destroy-unattached off"
+	want := "new-session -d -s wrekin-abc -c /w 'claude' '--teleport' 's'"
 	if got != want {
 		t.Errorf("launchArgs =\n %s\nwant\n %s", got, want)
+	}
+	got = strings.Join(keepAliveArgs("wrekin-abc"), " ")
+	want = "set-option -t =wrekin-abc destroy-unattached off"
+	if got != want {
+		t.Errorf("keepAliveArgs =\n %s\nwant\n %s", got, want)
 	}
 }
 

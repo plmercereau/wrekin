@@ -158,6 +158,11 @@ type Client struct {
 // NewClient talks to the unix socket at path.
 func NewClient(path string) *Client {
 	return &Client{dial: func() (net.Conn, error) {
+		// No socket file, no daemon: said before dialing, because a path too
+		// long for a unix socket fails with EINVAL rather than ENOENT.
+		if _, err := os.Lstat(path); errors.Is(err, fs.ErrNotExist) {
+			return nil, fmt.Errorf("%w (%s)", ErrNotRunning, path)
+		}
 		conn, err := net.DialTimeout("unix", path, 2*time.Second)
 		if err != nil {
 			if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ECONNREFUSED) || errors.Is(err, syscall.ENOENT) {
