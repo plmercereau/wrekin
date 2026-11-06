@@ -1,0 +1,17 @@
+# Go
+/dist/
+/wrekin
+*.test
+# Node / Bun
+node_modules/
+cloud/.wrangler/
+cloud/.dev.vars
+# Nix
+result
+result-*
+# Local worktrees used while developing the tracks in parallel
+/.worktrees/
+# Editors
+.DS_Store
+.idea/
+.vscode/
