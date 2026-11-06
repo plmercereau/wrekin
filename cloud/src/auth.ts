@@ -35,8 +35,13 @@ export function buildAuth(config: AuthConfig) {
     },
     account: {
       // The same person may sign in with GitHub one day and Google the next: one
-      // Wrekin account, as the spec asks, when both providers verified the e-mail.
-      accountLinking: { enabled: true, trustedProviders: ["github", "google"] },
+      // Wrekin account, as the spec asks. No `trustedProviders`: Better Auth then links
+      // a second provider to the user with the same e-mail only when that provider
+      // reports the e-mail as verified (`link-account.mjs` refuses the link when
+      // `!isTrustedProvider && !userInfo.emailVerified`). Naming a provider as trusted
+      // would link it on an unverified e-mail too, and GitHub and Google both issue
+      // identities whose e-mail they have not verified: a path to another user's account.
+      accountLinking: { enabled: true },
     },
     plugins: [
       // The MCP OAuth provider signs access tokens with the jwt plugin's keys; the
