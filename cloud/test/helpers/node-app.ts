@@ -1,5 +1,8 @@
+// better-auth's own core package (the instance is built on it): the schema the memory store needs.
+import { getAuthTables } from "@better-auth/core/db";
+import type { BetterAuthOptions } from "better-auth";
 import { memoryAdapter, type MemoryDB } from "better-auth/adapters/memory";
-import { buildAuth } from "../../src/auth";
+import { buildAuth, type AuthConfig } from "../../src/auth";
 import type { Env } from "../../src/env";
 import { createApiHandler } from "../../src/http";
 import { provideServices, type Services } from "../../src/services";
@@ -26,23 +29,26 @@ export function fakeEnv(): Env {
 }
 
 /**
- * Better Auth on the memory adapter. The adapter expects one array per model and
- * the model list depends on the plugins, so the store creates each array on first
- * access instead of enumerating the schema.
+ * Better Auth on the memory adapter. The adapter expects one array per model and the
+ * model list depends on the plugins, so the arrays are created from the instance's own
+ * schema once it exists (the adapter holds `tables` by reference). A Proxy creating them
+ * on access would not do: the adapter's transactions `structuredClone` the store.
  */
-export function memoryAuth(env: Env) {
+export function memoryAuth(env: Env, overrides: Partial<AuthConfig> = {}) {
   const tables: MemoryDB = {};
-  const db = new Proxy(tables, {
-    get: (target, key) => (typeof key === "string" ? (target[key] ??= []) : undefined),
-    has: (target, key) => typeof key === "string" && (target[key] ??= []) !== undefined,
-  });
-  return buildAuth({
+  const auth = buildAuth({
     baseURL: env.BASE_URL,
     secret: env.BETTER_AUTH_SECRET,
-    database: memoryAdapter(db),
+    database: memoryAdapter(tables),
     github: { clientId: env.GITHUB_CLIENT_ID, clientSecret: env.GITHUB_CLIENT_SECRET },
     google: { clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET },
+    ...overrides,
   });
+  for (const [key, table] of Object.entries(getAuthTables(auth.options as BetterAuthOptions))) {
+    tables[key] ??= [];
+    tables[table.modelName] ??= [];
+  }
+  return auth;
 }
 
 /**

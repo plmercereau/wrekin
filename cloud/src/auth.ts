@@ -3,6 +3,7 @@ import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { bearer, deviceAuthorization, jwt } from "better-auth/plugins";
 import { D1Dialect } from "kysely-d1";
 import type { Env } from "./env";
+import { parseAllowedRedirectHosts, redirectUriValidator } from "./oauth-redirects";
 
 /** The client id the Go agent presents to the device authorization endpoints. */
 export const AGENT_CLIENT_ID = "wrekin-agent";
@@ -16,6 +17,12 @@ export type AuthConfig = {
   database: NonNullable<BetterAuthOptions["database"]>;
   github: OAuthClient;
   google: OAuthClient;
+  /**
+   * Host suffixes an OAuth client's `redirect_uri` must end with for an authorization to
+   * be issued (`MCP_ALLOWED_REDIRECT_HOSTS`); empty or absent, every URI the client
+   * registered is accepted.
+   */
+  allowedRedirectHosts?: readonly string[];
 };
 
 /**
@@ -24,6 +31,7 @@ export type AuthConfig = {
  * generates `migrations/0001_auth.sql`.
  */
 export function buildAuth(config: AuthConfig) {
+  const validateRedirectUri = redirectUriValidator(config.allowedRedirectHosts ?? []);
   return betterAuth({
     appName: "Wrekin",
     baseURL: config.baseURL,
@@ -69,6 +77,10 @@ export function buildAuth(config: AuthConfig) {
         resource: `${config.baseURL}/mcp`,
         allowDynamicClientRegistration: true,
         allowUnauthenticatedClientRegistration: true,
+        // Registration has no validation hook in 1.7.18, so a client may register any
+        // redirect URI; the optional allowlist applies where it counts, when an
+        // authorization is about to be sent to that URI (src/oauth-redirects.ts).
+        ...(validateRedirectUri ? { validateRedirectUri } : {}),
       }),
     ],
     // Required by the MCP plugin: the generic token endpoint must not shadow /oauth2/token.
@@ -90,6 +102,7 @@ export function createAuth(env: Env): Auth {
     database: { dialect: new D1Dialect({ database: env.DB }), type: "sqlite" },
     github: { clientId: env.GITHUB_CLIENT_ID, clientSecret: env.GITHUB_CLIENT_SECRET },
     google: { clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET },
+    allowedRedirectHosts: parseAllowedRedirectHosts(env.MCP_ALLOWED_REDIRECT_HOSTS),
   });
   cache.set(env.DB, auth);
   return auth;

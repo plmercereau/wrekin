@@ -11,4 +11,11 @@ export type Env = {
   GITHUB_CLIENT_SECRET: string;
   GOOGLE_CLIENT_ID: string;
   GOOGLE_CLIENT_SECRET: string;
+  /**
+   * Optional. Comma-separated host suffixes (`claude.ai, claude.com`) the `redirect_uri` of
+   * an OAuth authorization request must end with; the plugin refuses the request otherwise.
+   * Absent or empty (the default), every URI a client registered is accepted, which is what
+   * Claude's connector needs out of the box.
+   */
+  MCP_ALLOWED_REDIRECT_HOSTS?: string;
 };

@@ -123,6 +123,20 @@ migrations. What belongs to a deployment is not in the repository:
 | The public URL (`BASE_URL`) | the stack (`base_url` output) | build variable `WREKIN_BASE_URL` |
 | The name `wrekin.platyplus.io` | the stack's custom domain | not in the config at all (`workers_dev: false`, no `routes`) |
 | The five secrets | the Worker's *Variables and Secrets* in the dashboard | `wrangler deploy` never touches secrets |
+| `MCP_ALLOWED_REDIRECT_HOSTS`, optional | the Worker's *Variables and Secrets* in the dashboard, as a secret so that a deploy keeps it | absent or empty: no restriction (the default) |
+
+`MCP_ALLOWED_REDIRECT_HOSTS` is a comma-separated list of host suffixes,
+`claude.ai, claude.com` for instance. When it is set, the MCP plugin's
+`validateRedirectUri` accepts an authorization request only when its
+`redirect_uri` is one the client registered *and* its host is one of the
+suffixes or a subdomain of one, so no authorization code, and no token,
+goes to another host; the consent page shows that host either way. Client
+registration itself stays open (Claude's connector registers with Dynamic
+Client Registration, and the plugin has no registration hook), so the list
+is what bounds where a registered client can send the user. Unset or
+empty, every registered URI is accepted, which is what the connector needs
+out of the box; a native client calling back to `http://127.0.0.1:<port>`
+needs `127.0.0.1` on the list.
 
 Workers Builds settings: root directory `cloud`, build command `bun run
 build`, deploy command `bun run deploy`, production branch `main`,
