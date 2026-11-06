@@ -83,7 +83,10 @@ jobs:
   cloud:
     name: Cloud (Worker)
     runs-on: ubuntu-latest
-    # Requires cloud/ (Track B): package.json, bun.lock and the typecheck/test scripts.
+    # Only this job and the Go job comment on the pull request (failure reports).
+    permissions:
+      contents: read
+      pull-requests: write
     defaults:
       run:
         working-directory: cloud
@@ -94,7 +97,26 @@ jobs:
           bun-version: latest
       - run: bun install --frozen-lockfile
       - run: bun run typecheck
-      - run: bun run test
+      - name: bun run test
+        shell: bash
+        run: |
+          set -o pipefail
+          bun run test 2>&1 | tee ci-cloud-test.log
+      - name: Report the failure on the pull request
+        # The job logs are not readable without repository admin rights; the
+        # tail of the failing output on the pull request is.
+        if: failure() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "**Cloud (Worker) failed.** Last lines of \`bun run test\`:"
+            echo
+            echo '```'
+            grep -v '^\s*$' ci-cloud-test.log 2>/dev/null | grep -E 'FAIL|✓|×|Error|error|expected|received|Test Files|Tests ' | tail -n 120 || echo "(no test log: an earlier step failed)"
+            echo '```'
+          } > ci-comment.md
+          gh pr comment ${{ github.event.pull_request.number }} --body-file ci-comment.md
 
   goreleaser-check:
     name: GoReleaser config

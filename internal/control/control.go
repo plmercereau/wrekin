@@ -97,9 +97,9 @@ func NewServer(h Handler) *Server { return &Server{handler: h} }
 // goroutine that creates files, which daemon.Run guarantees by calling it
 // before it starts its goroutines.
 func Listen(path string) (net.Listener, error) {
-	if len(path) >= 100 {
-		return nil, fmt.Errorf("socket path %q is too long for a unix socket", path)
-	}
+	// The directory is checked before the path length: a wide directory is the
+	// more important refusal, and the test temporary directories of macOS are
+	// long enough to trip the length check first.
 	dir := filepath.Dir(path)
 	info, err := os.Stat(dir)
 	if err != nil {
@@ -110,6 +110,9 @@ func Listen(path string) (net.Listener, error) {
 	}
 	if mode := info.Mode().Perm(); mode&0o077 != 0 {
 		return nil, fmt.Errorf("socket directory %s is accessible to other users (mode %04o); it must be 0700 (chmod 700 %s)", dir, mode, dir)
+	}
+	if len(path) >= 100 {
+		return nil, fmt.Errorf("socket path %q is too long for a unix socket", path)
 	}
 	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return nil, err
