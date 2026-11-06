@@ -61,16 +61,18 @@ of the allowed directories. Without a subcommand, lists the mappings.`,
 	listCmd.Flags().BoolVar(&asJSON, "json", false, "print the mappings as JSON")
 
 	forgetCmd := &cobra.Command{
-		Use:   "forget <repository>",
-		Short: "Remove a learned mapping (a declared pin lives in settings.json)",
-		Args:  cobra.ExactArgs(1),
-		RunE:  func(cmd *cobra.Command, args []string) error { return forgetRepo(cmd, a, args[0]) },
+		Use:               "forget <repository>",
+		Short:             "Remove a learned mapping (a declared pin lives in settings.json)",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeLearnedRepository(a),
+		RunE:              func(cmd *cobra.Command, args []string) error { return forgetRepo(cmd, a, args[0]) },
 	}
 	pinCmd := &cobra.Command{
-		Use:   "pin <repository>",
-		Short: "Print the settings snippet that declares a learned mapping (writes nothing)",
-		Args:  cobra.ExactArgs(1),
-		RunE:  func(cmd *cobra.Command, args []string) error { return pinRepo(a, args[0]) },
+		Use:               "pin <repository>",
+		Short:             "Print the settings snippet that declares a learned mapping (writes nothing)",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeLearnedRepository(a),
+		RunE:              func(cmd *cobra.Command, args []string) error { return pinRepo(a, args[0]) },
 	}
 	cmd.AddCommand(listCmd, forgetCmd, pinCmd)
 	return cmd

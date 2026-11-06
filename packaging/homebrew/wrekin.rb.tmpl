@@ -45,6 +45,8 @@ class Wrekin < Formula
 
   def install
     bin.install "wrekin"
+    # bash, zsh and fish completions, from cobra's `wrekin completion <shell>`.
+    generate_completions_from_executable(bin/"wrekin", "completion")
   end
 
   def caveats
