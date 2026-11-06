@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { fingerprint, parsePublicKey, verifyEd25519 } from "../crypto";
+import { canonicalPublicKey, fingerprint, verifyEd25519 } from "../crypto";
 import { NodeConflictError, type NodeRecord, type NodeStore } from "../db/nodes";
 import type { HubFactory, OnlineNode } from "../hub/client";
 
@@ -94,11 +94,13 @@ export async function registerNode(
   accountId: string,
   input: RegisterInput,
 ): Promise<{ nodeId: string; accountId: string }> {
-  if (!parsePublicKey(input.publicKey)) {
+  // Stored in canonical base64, so the UNIQUE check and the hub's comparison see one spelling per key.
+  const publicKey = canonicalPublicKey(input.publicKey);
+  if (!publicKey) {
     throw new NodeServiceError(400, "invalid_public_key", "publicKey must be the base64 of 32 raw Ed25519 bytes");
   }
   try {
-    const node = await nodes.insertNode({ accountId, ...input });
+    const node = await nodes.insertNode({ accountId, ...input, publicKey });
     return { nodeId: node.id, accountId: node.accountId };
   } catch (error) {
     if (error instanceof NodeConflictError) {

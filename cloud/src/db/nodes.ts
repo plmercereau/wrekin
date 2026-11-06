@@ -17,6 +17,7 @@ export type NodeRecord = {
 export type NewNode = {
   accountId: string;
   name: string;
+  /** Canonical base64 of the 32 key bytes (`canonicalPublicKey`): the UNIQUE index compares strings. */
   publicKey: string;
   agentVersion?: string | null;
   platform?: string | null;

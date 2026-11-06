@@ -1,4 +1,4 @@
-import { randomId } from "../crypto";
+import { canonicalPublicKey, randomId } from "../crypto";
 import {
   authMessage,
   authSchema,
@@ -189,7 +189,9 @@ export class HubCore {
     if (hello.data.nodeId !== attachment.nodeId) {
       return this.fail(socket, closeCodes.protocolError, "protocol_error", "nodeId does not match the connection");
     }
-    if (hello.data.publicKey !== attachment.publicKey) {
+    // Compared as key bytes, not as strings: either side may carry a non-canonical base64 spelling.
+    const presented = canonicalPublicKey(hello.data.publicKey);
+    if (presented === null || presented !== canonicalPublicKey(attachment.publicKey)) {
       return this.fail(socket, closeCodes.authFailed, "auth_failed", "public key does not match the registered one");
     }
     const nonce = this.host.randomNonce();

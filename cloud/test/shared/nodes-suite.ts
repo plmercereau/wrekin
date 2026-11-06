@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { unregisterMessage } from "../../src/nodes/service";
-import { generateNodeKey } from "../helpers/keys";
+import { alternateSpelling, generateNodeKey } from "../helpers/keys";
 import type { Fetcher } from "./auth-suite";
 
 export type SessionFactory = (label: string) => Promise<{ userId: string; headers: Record<string, string>; cookieHeaders: Record<string, string> }>;
@@ -60,6 +60,17 @@ export function nodesSuite(fetcher: Fetcher, newSession: SessionFactory, listNod
       const b = await newSession("dave");
       expect((await fetcher("/api/nodes", json({ name: "shared", publicKey: (await generateNodeKey()).publicKey }, a.headers))).status).toBe(201);
       expect((await fetcher("/api/nodes", json({ name: "shared", publicKey: (await generateNodeKey()).publicKey }, b.headers))).status).toBe(201);
+    });
+
+    it("refuses the same key under another base64 spelling with 409 key_taken", async () => {
+      const { headers } = await newSession("faythe");
+      const key = await generateNodeKey();
+      const other = alternateSpelling(key.publicKey);
+      expect(other).not.toBe(key.publicKey);
+      expect((await fetcher("/api/nodes", json({ name: "first", publicKey: other }, headers))).status).toBe(201);
+      const dup = await fetcher("/api/nodes", json({ name: "second", publicKey: key.publicKey }, headers));
+      expect(dup.status).toBe(409);
+      expect(((await dup.json()) as { error: string }).error).toBe("key_taken");
     });
 
     it("refuses a public key that is not 32 base64 bytes", async () => {

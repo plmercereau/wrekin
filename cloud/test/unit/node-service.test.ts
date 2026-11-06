@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { listNodes, NodeServiceError, parseTimestamp, registerNode, removeNode, toNodeView, unregisterMessage, unregisterNode } from "../../src/nodes/service";
 import { FakeHub } from "../helpers/fake-hub";
-import { generateNodeKey } from "../helpers/keys";
+import { alternateSpelling, generateNodeKey } from "../helpers/keys";
 import { MemoryNodeStore } from "../helpers/memory-nodes";
 
 // The one implementation behind POST /api/nodes, POST /api/nodes/unregister and the tRPC procedures.
@@ -56,6 +56,17 @@ describe("registerNode and removeNode", () => {
     expect(await removeNode(services, "acc_other", nodeId)).toBe(false);
     expect(await removeNode(services, "acc_reg", nodeId)).toBe(true);
     expect(await listNodes(services, "acc_reg")).toHaveLength(0);
+  });
+});
+
+describe("registerNode stores the key in canonical base64", () => {
+  it("refuses the same 32 bytes under another spelling and stores the canonical one", async () => {
+    const key = await generateNodeKey();
+    const other = alternateSpelling(key.publicKey);
+    const { nodeId } = await registerNode(services, "acc_canon", { name: "spelled", publicKey: other });
+    expect((await services.nodes.findNodeById(nodeId))?.publicKey).toBe(key.publicKey);
+    expect(await refusal(registerNode(services, "acc_canon", { name: "again", publicKey: key.publicKey }))).toEqual({ status: 409, code: "key_taken" });
+    expect(await refusal(registerNode(services, "acc_elsewhere", { name: "again", publicKey: other }))).toEqual({ status: 409, code: "key_taken" });
   });
 });
 

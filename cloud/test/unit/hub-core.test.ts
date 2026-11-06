@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { encodeBase64, verifyEd25519 } from "../../src/crypto";
 import { HubCore, type Attachment, type HubSocket } from "../../src/hub/core";
 import { authMessage, closeCodes } from "../../src/protocol";
-import { generateNodeKey } from "../helpers/keys";
+import { alternateSpelling, generateNodeKey } from "../helpers/keys";
 
 class FakeSocket implements HubSocket {
   sent: string[] = [];
@@ -108,6 +108,22 @@ describe("handshake", () => {
     const other = await generateNodeKey();
     await hub.frame(socket, { v: 1, type: "hello", nodeId: "node_1", publicKey: other.publicKey, name: "ws", agentVersion: "0.1.0" });
     expect(socket.closed?.code).toBe(closeCodes.authFailed);
+  });
+
+  it("accepts a hello whose public key is the registered one under another base64 spelling", async () => {
+    const hub = makeHub();
+    const spelled = alternateSpelling(key.publicKey);
+    const registeredCanonical = hub.open("node_1", key.publicKey);
+    await hub.frame(registeredCanonical, { v: 1, type: "hello", nodeId: "node_1", publicKey: spelled, name: "ws", agentVersion: "0.1.0" });
+    expect(registeredCanonical.closed).toBeNull();
+    expect(registeredCanonical.last().type).toBe("challenge");
+    // And the other way round: a row written before keys were canonicalised.
+    const registeredSpelled = hub.open("node_2", spelled);
+    await hub.frame(registeredSpelled, { v: 1, type: "hello", nodeId: "node_2", publicKey: key.publicKey, name: "ws", agentVersion: "0.1.0" });
+    expect(registeredSpelled.closed).toBeNull();
+    const { nonce } = registeredSpelled.last<{ nonce: string }>();
+    await hub.frame(registeredSpelled, { v: 1, type: "auth", signature: await key.sign(authMessage("node_2", nonce)) });
+    expect(registeredSpelled.last().type).toBe("welcome");
   });
 
   it("closes 4400 on a malformed frame or a frame out of order", async () => {

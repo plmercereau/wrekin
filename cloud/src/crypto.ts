@@ -28,6 +28,16 @@ export function parsePublicKey(publicKey: string): Uint8Array<ArrayBuffer> | nul
   return bytes && bytes.length === ED25519_PUBLIC_KEY_BYTES ? bytes : null;
 }
 
+/**
+ * The one base64 spelling of a 32-byte key, or null when `publicKey` is not one. `atob`
+ * ignores the padding bits of the last character, so `…Q=` and `…R=` decode to the same
+ * key: everything that stores or compares keys as strings goes through this first.
+ */
+export function canonicalPublicKey(publicKey: string): string | null {
+  const bytes = parsePublicKey(publicKey);
+  return bytes ? encodeBase64(bytes) : null;
+}
+
 /** Verifies an Ed25519 signature (base64) over the UTF-8 bytes of `message` with a base64 raw public key. */
 export async function verifyEd25519(publicKey: string, message: string, signature: string): Promise<boolean> {
   const keyBytes = parsePublicKey(publicKey);
