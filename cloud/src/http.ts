@@ -16,6 +16,26 @@ const isTrpc = (path: string) => path === "/api/trpc" || path.startsWith("/api/t
 
 const under = (path: string, prefix: string) => path === prefix || path.startsWith(`${prefix}/`);
 
+const isJson = (request: Request) => /^application\/json\s*(;|$)/i.test((request.headers.get("content-type") ?? "").trim());
+
+/** The session is presented as `Authorization: Bearer …` (the Go agent), not as a cookie. */
+const hasBearer = (request: Request) => /^bearer\s/i.test(request.headers.get("authorization") ?? "");
+
+/**
+ * Whether a request carrying a cookie session may come from the relay's own pages: the
+ * `Origin` header, when present, must be the relay's origin, and `Sec-Fetch-Site`, when
+ * present, must be `same-origin` or `none`. A request without either header (a
+ * non-browser client, or an old browser) is let through, since no browser omits both on
+ * a cross-site POST.
+ */
+export function sameSite(request: Request, ownOrigin: string): boolean {
+  const origin = request.headers.get("origin");
+  if (origin !== null && origin !== ownOrigin) return false;
+  const site = request.headers.get("sec-fetch-site");
+  if (site !== null && site !== "same-origin" && site !== "none") return false;
+  return true;
+}
+
 /**
  * Better Auth's device token endpoint only reads JSON while RFC 8628 clients post a form,
  * so a form body on that one path is re-encoded as JSON first.
@@ -45,8 +65,16 @@ export function createApiHandler(env: Env, services: Services): (request: Reques
 
   // The session comes from the cookie or `Authorization: Bearer` (a terminal, not a browser).
   const sessionUser = async (request: Request) => (await auth.api.getSession({ headers: request.headers }))?.user ?? null;
+  const ownOrigin = new URL(env.BASE_URL).origin;
 
   async function register(request: Request): Promise<Response> {
+    // `request.json()` does not care about the Content-Type, a cross-site <form enctype="text/plain">
+    // does produce a parseable body, and Better Auth's origin check covers /api/auth only: the
+    // route refuses what a browser would send on another site's behalf before reading the session.
+    if (!isJson(request)) return json({ error: "unsupported_media_type", message: "the body must be application/json" }, 415);
+    if (!hasBearer(request) && !sameSite(request, ownOrigin)) {
+      return json({ error: "cross_site", message: "a cookie session is accepted from the relay's own origin only" }, 403);
+    }
     const user = await sessionUser(request);
     if (!user) return json({ error: "unauthenticated" }, 401);
     const body = registerSchema.safeParse(await request.json().catch(() => null));

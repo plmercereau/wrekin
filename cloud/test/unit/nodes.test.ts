@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { FakeHub } from "../helpers/fake-hub";
 import { generateNodeKey } from "../helpers/keys";
 import { MemoryNodeStore } from "../helpers/memory-nodes";
-import { nodeWorker } from "../helpers/node-app";
+import { nodeWorker, TEST_BASE_URL } from "../helpers/node-app";
 import { createTestSession } from "../helpers/session";
 import { nodesSuite } from "../shared/nodes-suite";
 
@@ -14,6 +14,7 @@ nodesSuite(
   fetcher,
   (label) => createTestSession(services.auth, label),
   async (headers) => (await caller(headers)).nodes.list(),
+  TEST_BASE_URL,
 );
 
 describe("nodes.list with the hub", () => {

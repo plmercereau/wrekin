@@ -3,7 +3,7 @@ import { unregisterMessage } from "../../src/nodes/service";
 import { generateNodeKey } from "../helpers/keys";
 import type { Fetcher } from "./auth-suite";
 
-export type SessionFactory = (label: string) => Promise<{ userId: string; headers: Record<string, string> }>;
+export type SessionFactory = (label: string) => Promise<{ userId: string; headers: Record<string, string>; cookieHeaders: Record<string, string> }>;
 
 /** The account's nodes as the bearer of `headers` sees them (`nodes.list`, in-process or over HTTP). */
 export type NodeLister = (headers: Record<string, string>) => Promise<Array<Record<string, unknown>>>;
@@ -18,7 +18,7 @@ const json = (body: unknown, headers: Record<string, string> = {}): RequestInit 
  * Assertions shared by the plain-Node and the workerd runs of the node API the Go agent
  * speaks: `POST /api/nodes` with a session, `POST /api/nodes/unregister` with a signature.
  */
-export function nodesSuite(fetcher: Fetcher, newSession: SessionFactory, listNodes: NodeLister) {
+export function nodesSuite(fetcher: Fetcher, newSession: SessionFactory, listNodes: NodeLister, baseURL: string) {
   describe("node registration", () => {
     it("refuses an anonymous registration", async () => {
       const key = await generateNodeKey();
@@ -76,6 +76,38 @@ export function nodesSuite(fetcher: Fetcher, newSession: SessionFactory, listNod
       const res = await fetcher("/api/nodes", json({ name: "" }, headers));
       expect(res.status).toBe(400);
       expect(((await res.json()) as { error: string }).error).toBe("invalid_body");
+    });
+  });
+
+  describe("cross-site protection of POST /api/nodes", () => {
+    const body = async () => ({ name: "csrf", publicKey: (await generateNodeKey()).publicKey });
+
+    it("requires a JSON content type: a text/plain body that happens to parse is refused with 415", async () => {
+      const { cookieHeaders } = await newSession("frank");
+      const res = await fetcher("/api/nodes", {
+        method: "POST",
+        headers: { "content-type": "text/plain", ...cookieHeaders },
+        body: JSON.stringify(await body()),
+      });
+      expect(res.status).toBe(415);
+      expect(((await res.json()) as { error: string }).error).toBe("unsupported_media_type");
+    });
+
+    it("refuses a cookie session whose request comes from another origin with 403", async () => {
+      const { cookieHeaders } = await newSession("grace");
+      const foreign = await fetcher("/api/nodes", json(await body(), { ...cookieHeaders, origin: "https://evil.example" }));
+      expect(foreign.status).toBe(403);
+      expect(((await foreign.json()) as { error: string }).error).toBe("cross_site");
+      const crossSite = await fetcher("/api/nodes", json(await body(), { ...cookieHeaders, "sec-fetch-site": "cross-site" }));
+      expect(crossSite.status).toBe(403);
+    });
+
+    it("accepts a cookie session from its own origin, and a bearer session with no Origin at all", async () => {
+      const { headers, cookieHeaders } = await newSession("hank");
+      const sameOrigin = await fetcher("/api/nodes", json(await body(), { ...cookieHeaders, origin: new URL(baseURL).origin, "sec-fetch-site": "same-origin" }));
+      expect(sameOrigin.status).toBe(201);
+      const terminal = await fetcher("/api/nodes", json({ ...(await body()), name: "csrf-2" }, headers));
+      expect(terminal.status).toBe(201);
     });
   });
 
