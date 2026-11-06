@@ -66,8 +66,16 @@ func (t *Tmux) run(ctx context.Context, rest ...string) (stdout string, stderr s
 	return strings.TrimRight(out.String(), "\n"), strings.TrimSpace(errBuf.String()), nil
 }
 
-// target names a session exactly (the "=" prefix disables prefix matching).
+// target names a session exactly (the "=" prefix disables prefix matching),
+// for the commands that take a target-session: has-session, kill-session,
+// attach-session.
 func target(session string) string { return "=" + session }
+
+// paneTarget names the session's current pane exactly, for the commands that
+// take a target-pane or target-window (capture-pane, display-message,
+// set-option): without the trailing colon tmux reads "=name" as a window or
+// pane name and answers "can't find pane".
+func paneTarget(session string) string { return "=" + session + ":" }
 
 // Launch implements Terminal. argv is quoted into a single shell command,
 // which every tmux version accepts.
@@ -121,7 +129,7 @@ func (t *Tmux) Running(session string) (bool, error) {
 	if err != nil || !exists {
 		return false, err
 	}
-	out, _, err := t.run(nil, "display-message", "-p", "-t", target(session), "#{pane_dead}\t#{pane_current_command}")
+	out, _, err := t.run(nil, "display-message", "-p", "-t", paneTarget(session), "#{pane_dead}\t#{pane_current_command}")
 	if err != nil {
 		return false, err
 	}
@@ -141,7 +149,7 @@ func (t *Tmux) Capture(session string, lines int) (string, error) {
 	if lines <= 0 {
 		lines = 40
 	}
-	out, _, err := t.run(nil, "capture-pane", "-p", "-t", target(session), "-S", "-"+strconv.Itoa(lines))
+	out, _, err := t.run(nil, "capture-pane", "-p", "-t", paneTarget(session), "-S", "-"+strconv.Itoa(lines))
 	if err != nil {
 		return "", err
 	}
@@ -200,7 +208,7 @@ func launchArgs(session, workdir string, argv []string) []string {
 // keepAliveArgs tells the session to survive without an attached client even
 // when the user's configuration sets destroy-unattached.
 func keepAliveArgs(session string) []string {
-	return []string{"set-option", "-t", target(session), "destroy-unattached", "off"}
+	return []string{"set-option", "-t", paneTarget(session), "destroy-unattached", "off"}
 }
 
 // shellJoin quotes argv for a POSIX shell.

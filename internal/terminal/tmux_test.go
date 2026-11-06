@@ -80,7 +80,7 @@ func TestTmuxLaunchExistsCaptureKill(t *testing.T) {
 			break
 		}
 		if time.Now().After(deadline) {
-			info, _, infoErr := tm.run(nil, "display-message", "-p", "-t", target(session), "#{pane_dead} #{pane_current_command} #{pane_width}x#{pane_height}")
+			info, _, infoErr := tm.run(nil, "display-message", "-p", "-t", paneTarget(session), "#{pane_dead} #{pane_current_command} #{pane_width}x#{pane_height}")
 			t.Fatalf("READY never showed in the pane.\ncapture error: %v\ncapture output: %q\npane: %q (%v)", lastErr, lastOut, info, infoErr)
 		}
 		time.Sleep(50 * time.Millisecond)
@@ -142,7 +142,7 @@ func TestLaunchArgsAndKeepAliveArgs(t *testing.T) {
 		t.Errorf("launchArgs =\n %s\nwant\n %s", got, want)
 	}
 	got = strings.Join(keepAliveArgs("wrekin-abc"), " ")
-	want = "set-option -t =wrekin-abc destroy-unattached off"
+	want = "set-option -t =wrekin-abc: destroy-unattached off"
 	if got != want {
 		t.Errorf("keepAliveArgs =\n %s\nwant\n %s", got, want)
 	}
