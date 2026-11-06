@@ -32,6 +32,8 @@ const (
 	// MethodReposForget removes a learned repository mapping; the daemon owns
 	// that file while it runs, so the CLI asks it instead of writing.
 	MethodReposForget = "repos.forget"
+	// MethodSessionsKill ends a teleported session (`wrekin kill`).
+	MethodSessionsKill = "sessions.kill"
 )
 
 // Request is one call.
@@ -90,6 +92,19 @@ type ReposForgetResult struct {
 	Removed    bool   `json:"removed"`
 	Repository string `json:"repository,omitempty"`
 	Path       string `json:"path,omitempty"`
+}
+
+// SessionsKillParams are the parameters of "sessions.kill": a job id or a
+// session name.
+type SessionsKillParams struct {
+	Target string `json:"target"`
+}
+
+// SessionsKillResult says what "sessions.kill" ended; Job is nil for a
+// session no job knew.
+type SessionsKillResult struct {
+	Session string        `json:"session"`
+	Job     *protocol.Job `json:"job,omitempty"`
 }
 
 // Handler serves one method.

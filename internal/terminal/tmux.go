@@ -162,6 +162,16 @@ func (t *Tmux) Running(session string) (bool, error) {
 }
 
 // Capture implements Terminal.
+// SendLine implements Terminal: the text is sent literally (-l, so no key
+// name in it is interpreted), then Enter as a key of its own.
+func (t *Tmux) SendLine(session, text string) error {
+	if _, _, err := t.run(nil, "send-keys", "-t", paneTarget(session), "-l", "--", text); err != nil {
+		return err
+	}
+	_, _, err := t.run(nil, "send-keys", "-t", paneTarget(session), "Enter")
+	return err
+}
+
 func (t *Tmux) Capture(session string, lines int) (string, error) {
 	if lines <= 0 {
 		lines = 40

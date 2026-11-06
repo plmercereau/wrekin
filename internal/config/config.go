@@ -49,6 +49,10 @@ type WorkspaceSettings struct {
 type TeleportSettings struct {
 	Terminal      string `json:"terminal"`
 	MaxConcurrent int    `json:"maxConcurrent"`
+	// RemoteControl starts the teleported session with Claude Code's Remote
+	// Control, so the user goes on with it from claude.ai/code or the Claude
+	// app, not only from the node's terminal. On by default.
+	RemoteControl bool `json:"remoteControl"`
 }
 
 // LoggingSettings controls the local log.
@@ -68,7 +72,7 @@ func Default() Settings {
 			DefaultDirectory:   "~/projects",
 			AutoDiscover:       true,
 		},
-		Teleport: TeleportSettings{Terminal: "tmux", MaxConcurrent: 4},
+		Teleport: TeleportSettings{Terminal: "tmux", MaxConcurrent: 4, RemoteControl: true},
 		Logging:  LoggingSettings{Level: "info"},
 	}
 }

@@ -249,12 +249,20 @@ func TestInteractiveStdinIsFalseForDevNull(t *testing.T) {
 
 func TestAuthMarksClaudeOnboardedOnceSignedInOnly(t *testing.T) {
 	signedIn := &fakeClaude{signedIn: true}
-	if out := runAuth(t, signedIn, false); !signedIn.onboarded || !strings.Contains(out, "first-run setup as done") {
+	if out := runAuth(t, signedIn, false); !signedIn.onboarded || !strings.Contains(out, "first-run setup") {
 		t.Errorf("onboarded = %v, output:\n%s", signedIn.onboarded, out)
 	}
 	signedOut := &fakeClaude{}
 	runAuth(t, signedOut, false)
 	if signedOut.onboarded {
 		t.Error("onboarding marked on a signed-out Claude Code")
+	}
+}
+
+func TestKillNeedsTargetsOrAll(t *testing.T) {
+	for _, args := range [][]string{{"kill"}, {"kill", "--all", "wrekin-x"}} {
+		if _, err := run(t, args...); err == nil || !strings.Contains(err.Error(), "--all") {
+			t.Errorf("%v: err = %v", args, err)
+		}
 	}
 }

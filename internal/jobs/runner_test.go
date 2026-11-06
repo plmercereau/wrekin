@@ -620,3 +620,125 @@ func TestLaunchReportsASetupScreenInsteadOfReady(t *testing.T) {
 		t.Errorf("detail = %q", j.Ready.Detail)
 	}
 }
+
+// With Remote Control on, the runner types the harness's command once the
+// input box is bare, under "<node> <session>", and reports the session's
+// claude.ai URL once the harness prints it.
+func TestLaunchTurnsRemoteControlOn(t *testing.T) {
+	requireGit(t)
+	e := newEnv(t, func(d *RunnerDeps) {
+		d.RemoteControl = true
+		d.NodeName = "fennec"
+		d.RemoteControlGrace = 2 * time.Second
+	})
+	checkout := filepath.Join(e.root, "wrekin")
+	initRepo(t, checkout, "git@github.com:plmercereau/wrekin.git")
+	e.harn.setTrusted(checkout, true)
+
+	job, jerr := e.runner.Teleport(context.Background(), teleportParams(12, "plmercereau/wrekin"))
+	if jerr != nil {
+		t.Fatal(jerr)
+	}
+	launched := e.waitLaunched(1)
+	if strings.Join(launched.argv, " ") != "claude --teleport "+sessionID(12) {
+		t.Errorf("argv %q: remote control is not a launch flag", launched.argv)
+	}
+	// A dialog in front of the prompt: nothing may be typed.
+	e.term.setPane(launched.session, "READY\nan upsell dialog")
+	time.Sleep(150 * time.Millisecond)
+	if sent := e.term.sentLines(); len(sent) != 0 {
+		t.Fatalf("typed into a dialog: %q", sent)
+	}
+	e.term.setPane(launched.session, "READY IDLE")
+	wantName := "fennec " + launched.session
+	deadline := time.Now().Add(2 * time.Second)
+	for len(e.term.sentLines()) == 0 && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if sent := e.term.sentLines(); len(sent) != 1 || sent[0] != launched.session+": /remote-control "+wantName {
+		t.Fatalf("sent %q", sent)
+	}
+	e.term.setPane(launched.session, "READY IDLE RC-ON https://claude.ai/code/session_01RC")
+	j := e.waitState(job.ID, protocol.StateReady)
+	if j.Ready == nil || !j.Ready.Confirmed || !strings.Contains(j.Ready.Detail, "Remote Control active") {
+		t.Errorf("ready = %+v", j.Ready)
+	}
+	if j.Session == nil || j.Session.RemoteControl != wantName || j.Session.RemoteControlURL != "https://claude.ai/code/session_01RC" {
+		t.Errorf("session = %+v", j.Session)
+	}
+}
+
+// When remote control does not come up, the session is still ready, without
+// a Remote Control name, and the detail says how to turn it on.
+func TestLaunchSaysWhenRemoteControlDoesNotComeUp(t *testing.T) {
+	requireGit(t)
+	e := newEnv(t, func(d *RunnerDeps) {
+		d.RemoteControl = true
+		d.NodeName = "bad!name"
+		d.RemoteControlGrace = 200 * time.Millisecond
+	})
+	checkout := filepath.Join(e.root, "wrekin")
+	initRepo(t, checkout, "git@github.com:plmercereau/wrekin.git")
+	e.harn.setTrusted(checkout, true)
+	job, jerr := e.runner.Teleport(context.Background(), teleportParams(13, "plmercereau/wrekin"))
+	if jerr != nil {
+		t.Fatal(jerr)
+	}
+	launched := e.waitLaunched(1)
+	e.term.setPane(launched.session, "READY IDLE")
+	j := e.waitState(job.ID, protocol.StateReady)
+	// A node name the harness refuses falls back to the session's own name.
+	if sent := e.term.sentLines(); len(sent) != 1 || sent[0] != launched.session+": /remote-control "+launched.session {
+		t.Errorf("sent %q", sent)
+	}
+	if j.Ready == nil || !strings.Contains(j.Ready.Detail, "/remote-control") || j.Session.RemoteControl != "" {
+		t.Errorf("ready = %+v, session = %+v", j.Ready, j.Session)
+	}
+}
+
+// `wrekin kill` ends a session by job id or by session name; its job ends
+// as session_gone, so teleporting again needs relaunch.
+func TestKillEndsTheSessionAndTheJob(t *testing.T) {
+	requireGit(t)
+	e := newEnv(t, nil)
+	checkout := filepath.Join(e.root, "wrekin")
+	initRepo(t, checkout, "git@github.com:plmercereau/wrekin.git")
+	e.harn.setTrusted(checkout, true)
+
+	for i, byJobID := range []bool{true, false} {
+		job, jerr := e.runner.Teleport(context.Background(), teleportParams(20+i, "plmercereau/wrekin"))
+		if jerr != nil {
+			t.Fatal(jerr)
+		}
+		launched := e.waitLaunched(i + 1)
+		e.term.setPane(launched.session, "READY")
+		e.waitState(job.ID, protocol.StateReady)
+
+		target := launched.session
+		if byJobID {
+			target = job.ID
+		}
+		killed, err := e.runner.Kill(target)
+		if err != nil {
+			t.Fatalf("Kill(%s): %v", target, err)
+		}
+		if killed == nil || killed.State != protocol.StateFailed || killed.Error == nil || killed.Error.Code != protocol.CodeSessionGone {
+			t.Errorf("Kill(%s) = %+v", target, killed)
+		}
+		if exists, _ := e.term.Exists(launched.session); exists {
+			t.Errorf("session %s still exists", launched.session)
+		}
+		if _, jerr := e.runner.Teleport(context.Background(), teleportParams(20+i, "plmercereau/wrekin")); jerr == nil || jerr.Code != protocol.CodeSessionGone {
+			t.Errorf("teleport again without relaunch = %v, want session_gone", jerr)
+		}
+	}
+}
+
+func TestKillRefusesWhatIsNotWrekins(t *testing.T) {
+	e := newEnv(t, nil)
+	for _, target := range []string{"main", "wrekin-absent", "job_unknown"} {
+		if _, err := e.runner.Kill(target); !errors.Is(err, ErrNothingToKill) {
+			t.Errorf("Kill(%q) = %v, want ErrNothingToKill", target, err)
+		}
+	}
+}

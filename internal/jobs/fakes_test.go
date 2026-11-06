@@ -29,6 +29,8 @@ type fakeTerminal struct {
 	// launchGate, when set, blocks Launch until it is closed.
 	launchGate chan struct{}
 	available  error
+	// sent records SendLine calls as "session: text".
+	sent []string
 }
 
 type fakeSession struct {
@@ -116,6 +118,19 @@ func (f *fakeTerminal) AttachCommand(session string) []string {
 	return []string{"tmux", "attach-session", "-t", "=" + session}
 }
 
+func (f *fakeTerminal) SendLine(session, text string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.sent = append(f.sent, session+": "+text)
+	return nil
+}
+
+func (f *fakeTerminal) sentLines() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.sent...)
+}
+
 func (f *fakeTerminal) setPane(session, pane string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -176,7 +191,23 @@ func (f *fakeHarness) Trust(dir string) error {
 	return nil
 }
 func (f *fakeHarness) LaunchArgs(id string) []string { return []string{"claude", "--teleport", id} }
-func (f *fakeHarness) ReadyPattern() *regexp.Regexp  { return regexp.MustCompile(`READY`) }
+func (f *fakeHarness) InputIdle(pane string) bool    { return strings.Contains(pane, "IDLE") }
+func (f *fakeHarness) RemoteControlCommand(name string) string {
+	if strings.Contains(name, "!") {
+		return ""
+	}
+	return "/remote-control " + name
+}
+func (f *fakeHarness) RemoteControl(pane string) (bool, string) {
+	if !strings.Contains(pane, "RC-ON") {
+		return false, ""
+	}
+	if i := strings.Index(pane, "https://"); i >= 0 {
+		return true, strings.Fields(pane[i:])[0]
+	}
+	return true, ""
+}
+func (f *fakeHarness) ReadyPattern() *regexp.Regexp { return regexp.MustCompile(`READY`) }
 func (f *fakeHarness) SetupScreen(pane string) string {
 	if strings.Contains(pane, "SETUP") {
 		return "its fake setup"

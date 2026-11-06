@@ -36,6 +36,13 @@ type RunnerDeps struct {
 	Term          terminal.Terminal
 	Harness       harness.Harness
 	MaxConcurrent int
+	// RemoteControl launches sessions under the harness's remote control
+	// (settings teleport.remoteControl), listed as "<NodeName> <session>".
+	RemoteControl bool
+	NodeName      string
+	// RemoteControlGrace is how long, once the prompt shows, the runner waits
+	// for remote control to report itself active (default 20 s).
+	RemoteControlGrace time.Duration
 	// ReadyTimeout bounds the wait for the harness prompt (default 120 s).
 	ReadyTimeout time.Duration
 	// PollInterval is how often the pane is inspected (default 2 s).
@@ -63,10 +70,13 @@ type Runner struct {
 const (
 	defaultReadyTimeout = 120 * time.Second
 	defaultPollInterval = 2 * time.Second
-	detectCacheTTL      = time.Minute
-	worktreeExclude     = ".claude/worktrees/"
-	reasonClone         = "clone"
-	reasonTrust         = "trust"
+	// defaultRemoteControlGrace: Claude Code 2.1.177 shows "/rc active" a few
+	// seconds after its prompt.
+	defaultRemoteControlGrace = 20 * time.Second
+	detectCacheTTL            = time.Minute
+	worktreeExclude           = ".claude/worktrees/"
+	reasonClone               = "clone"
+	reasonTrust               = "trust"
 )
 
 // cloudSessionIDRe is the shape of a Claude Code Cloud session id (the MCP
@@ -81,6 +91,9 @@ func NewRunner(deps RunnerDeps) *Runner {
 	}
 	if deps.ReadyTimeout <= 0 {
 		deps.ReadyTimeout = defaultReadyTimeout
+	}
+	if deps.RemoteControlGrace <= 0 {
+		deps.RemoteControlGrace = defaultRemoteControlGrace
 	}
 	if deps.PollInterval <= 0 {
 		deps.PollInterval = defaultPollInterval
@@ -190,6 +203,64 @@ func (r *Runner) Status(jobID string) (*Job, *protocol.JobError) {
 		return nil, jobErr(protocol.CodeUnknownJob, "no job of that id")
 	}
 	return job, nil
+}
+
+// ErrNothingToKill means Kill found neither a job nor a Wrekin session of
+// that name.
+var ErrNothingToKill = errors.New("no teleport job or session of that name")
+
+// Kill ends a teleported session from the node: target is a job id or a
+// session name (wrekin-…). The terminal session is killed and the job, if
+// any, ends in failed/session_gone, so a later teleport of the same cloud
+// session needs relaunch, as after any lost session. The worktree stays;
+// `wrekin cleanup` removes it. It returns the job, or nil for a session
+// without one (left by an older daemon).
+func (r *Runner) Kill(target string) (*Job, error) {
+	target = strings.TrimSpace(target)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var job *Job
+	if j, ok := r.deps.Store.Get(target); ok {
+		job = j
+	} else {
+		for _, j := range r.deps.Store.List() {
+			if j.Session != nil && j.Session.Name == target {
+				job = j
+				break
+			}
+		}
+	}
+	session := target
+	if job != nil {
+		if job.Session == nil {
+			return nil, fmt.Errorf("job %s has no session (state %s)", job.ID, job.State)
+		}
+		session = job.Session.Name
+	} else if !strings.HasPrefix(target, sessionPrefix) {
+		return nil, ErrNothingToKill
+	}
+	exists, err := r.deps.Term.Exists(session)
+	if err != nil {
+		return nil, err
+	}
+	if !exists && job == nil {
+		return nil, ErrNothingToKill
+	}
+	if exists {
+		if err := r.deps.Term.Kill(session); err != nil {
+			return nil, err
+		}
+	}
+	r.deps.Logger.Info("session killed", "session", session)
+	if job == nil {
+		return nil, nil
+	}
+	if job.State == protocol.StateReady || job.State == protocol.StateLaunching {
+		job.Ready = nil
+		job.Error = jobErr(protocol.CodeSessionGone, "the session was ended on the node (wrekin kill); request again with relaunch to start a new one")
+		r.transition(job, protocol.StateFailed)
+	}
+	return job.clone(), nil
 }
 
 // List returns all jobs, newest first.
@@ -624,7 +695,19 @@ func (r *Runner) launch(job *Job) {
 		r.deps.Logger.Warn("stale session killed before launch", "job", job.ID, "session", session)
 		_ = r.deps.Term.Kill(session)
 	}
-	job.Session = &protocol.Session{Terminal: r.deps.Term.Name(), Name: session, Attach: "wrekin attach " + session}
+	// Remote control is turned on once the session is up, by typing the
+	// harness's command into it, under "<node> <session>" (or the session's
+	// name alone when the harness refuses the node's).
+	rcName, rcCommand := "", ""
+	if r.deps.RemoteControl {
+		for _, name := range []string{strings.TrimSpace(r.deps.NodeName + " " + session), session} {
+			if cmd := r.deps.Harness.RemoteControlCommand(name); cmd != "" {
+				rcName, rcCommand = name, cmd
+				break
+			}
+		}
+	}
+	job.Session = &protocol.Session{Terminal: r.deps.Term.Name(), Name: session, Attach: "wrekin attach " + session, RemoteControl: rcName}
 	r.save(job, protocol.StateLaunching)
 
 	argv := r.deps.Harness.LaunchArgs(job.CloudSessionID)
@@ -640,6 +723,8 @@ func (r *Runner) launch(job *Job) {
 	deadline := time.Now().Add(r.deps.ReadyTimeout)
 	pattern := r.deps.Harness.ReadyPattern()
 	stoppedPolls := 0
+	var promptSince time.Time
+	rcSent := false
 	for {
 		exists, _ := r.deps.Term.Exists(session)
 		running := false
@@ -673,9 +758,46 @@ func (r *Runner) launch(job *Job) {
 				return
 			}
 			if pattern.MatchString(pane) {
-				job.Ready = &protocol.Ready{Confirmed: true, Detail: "prompt visible"}
-				r.save(job, protocol.StateReady)
-				return
+				var ready *protocol.Ready
+				active, url := false, ""
+				if rcCommand != "" {
+					active, url = r.deps.Harness.RemoteControl(pane)
+				}
+				switch {
+				case rcCommand == "":
+					ready = &protocol.Ready{Confirmed: true, Detail: "prompt visible"}
+				case active && (url != "" || rcSent && time.Since(promptSince) >= r.deps.RemoteControlGrace):
+					job.Session.RemoteControlURL = url
+					ready = &protocol.Ready{Confirmed: true, Detail: "prompt visible, Remote Control active"}
+				default:
+					if promptSince.IsZero() {
+						promptSince = time.Now()
+					}
+					// Typed only into the bare input box: a dialog in front of it
+					// (an upsell, a tip) would take the line as its answer.
+					if !rcSent && r.deps.Harness.InputIdle(pane) {
+						if err := r.deps.Term.SendLine(session, rcCommand); err != nil {
+							r.deps.Logger.Warn("remote control command not sent", "job", job.ID, "err", err)
+						} else {
+							r.deps.Logger.Info("remote control requested", "job", job.ID, "name", rcName)
+						}
+						rcSent = true
+						promptSince = time.Now()
+					}
+					if time.Since(promptSince) >= r.deps.RemoteControlGrace || !time.Now().Before(deadline) {
+						job.Session.RemoteControl = ""
+						why := "it did not come up"
+						if !rcSent {
+							why = "a dialog stayed in front of the input"
+						}
+						ready = &protocol.Ready{Confirmed: true, Detail: fmt.Sprintf("prompt visible, but Remote Control is off (%s): attach with `%s` and run /remote-control there", why, job.Session.Attach)}
+					}
+				}
+				if ready != nil {
+					job.Ready = ready
+					r.save(job, protocol.StateReady)
+					return
+				}
 			}
 		}
 		if time.Now().After(deadline) {

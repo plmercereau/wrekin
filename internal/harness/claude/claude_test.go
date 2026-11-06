@@ -129,3 +129,58 @@ func TestSetupScreenNamesWhatClaudeWaitsOn(t *testing.T) {
 		}
 	}
 }
+
+func TestRemoteControlCommand(t *testing.T) {
+	c := New("", "claude")
+	if got := c.RemoteControlCommand("fennec wrekin-ydncipcr"); got != "/remote-control fennec wrekin-ydncipcr" {
+		t.Errorf("command = %q", got)
+	}
+	for _, bad := range []string{"", "-x", " lead", "a;b", "line\nbreak", "/clear"} {
+		if got := c.RemoteControlCommand(bad); got != "" {
+			t.Errorf("name %q gave %q", bad, got)
+		}
+	}
+}
+
+func TestRemoteControlReadsThePane(t *testing.T) {
+	c := New("", "claude")
+	// Claude Code 2.1.316 after `/remote-control fennec wrekin-probe`, captured on a node.
+	pane := "❯ /remote-control fennec wrekin-probe\n  /remote-control is active · Continue here, on your phone, or at https://claude.ai/code/session_01CNrG8QJt54sDmUPtixP7Pa\n────────\n❯ \n────────\n  ⏵⏵ auto mode on (shift+tab to cycle)\n                          /rc active"
+	if active, url := c.RemoteControl(pane); !active || url != "https://claude.ai/code/session_01CNrG8QJt54sDmUPtixP7Pa" {
+		t.Errorf("RemoteControl = %v, %q", active, url)
+	}
+	// 2.1.177 turned on from the menu: the status line, no URL.
+	if active, url := c.RemoteControl("────────\n❯ \n────────\n  ? for shortcuts\n      /rc active"); !active || url != "" {
+		t.Errorf("status line only = %v, %q", active, url)
+	}
+	if active, _ := c.RemoteControl("────────\n❯ \n────────\n  ? for shortcuts"); active {
+		t.Error("a pane without it reported active")
+	}
+	if got := c.SetupScreen(" Remote Control\n   ❯ 1. Enable Remote Control  Opens a secure connection to claude.ai."); got != "the Remote Control consent" {
+		t.Errorf("consent screen = %q", got)
+	}
+}
+
+func TestInputIdleOnlyForTheBareInputBox(t *testing.T) {
+	c := New("", "claude")
+	idle := []string{
+		"● Session resumed\n────────────\n❯ \n────────────\n  ? for shortcuts · ← for agents",
+		"────────────\n❯ Try \"fix typecheck errors\"\n────────────\n  ? for shortcuts",
+	}
+	for _, pane := range idle {
+		if !c.InputIdle(pane) {
+			t.Errorf("not idle:\n%s", pane)
+		}
+	}
+	busy := []string{
+		// The upsell captured on fennec over a teleported session: typing would answer it.
+		"❯ téléporte cette session avec wrekin\n● Session resumed without branch\n────────────\n  Try the new fullscreen renderer?\n  ❯ 1. Yes, try it\n    2. Not now\n  Enter to confirm · Esc to cancel",
+		" Choose the text style\n ❯ 2. Dark mode ✔\n   3. Light mode",
+		"starting...",
+	}
+	for _, pane := range busy {
+		if c.InputIdle(pane) {
+			t.Errorf("idle:\n%s", pane)
+		}
+	}
+}

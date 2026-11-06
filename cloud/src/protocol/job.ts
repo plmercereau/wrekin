@@ -20,6 +20,10 @@ export const sessionSchema = z.object({
   terminal: z.string(),
   name: z.string(),
   attach: z.string(),
+  /** The name the session is listed under in claude.ai/code when it runs with Remote Control. */
+  remoteControl: z.string().optional(),
+  /** The claude.ai URL of that session, as the harness printed it. */
+  remoteControlUrl: z.string().optional(),
 });
 
 export const attentionSchema = z.object({

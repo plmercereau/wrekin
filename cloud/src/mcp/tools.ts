@@ -62,10 +62,19 @@ export function describeJob(job: Job, nodeName: string): string {
         job.attention?.repositoryUrl ? ` Repository: ${job.attention.repositoryUrl}.` : ""
       }${job.attention?.proposedPath ? ` It would be cloned to ${job.attention.proposedPath}.` : ""} Ask the user whether to go ahead, then call approve_repository with approved true or false.`;
     case "ready": {
-      const attach = job.session?.attach ? ` The user opens it on ${nodeName} with \`${job.session.attach}\`.` : "";
+      const remote = job.session?.remoteControl;
+      const url = job.session?.remoteControlUrl;
+      const attach = remote
+        ? ` It runs under Remote Control: the user continues it ${url ? `at ${url}, ` : ""}from claude.ai/code or the Claude app, where it is listed as "${remote}"${
+            job.session?.attach ? `, or on ${nodeName} itself with \`${job.session.attach}\`` : ""
+          }.${url ? " Give the user that link." : ""}`
+        : job.session?.attach
+          ? ` The user opens it on ${nodeName} with \`${job.session.attach}\`.`
+          : "";
       // Users expect the next request to run on the machine; it does not: this conversation stays in the cloud.
-      const handOff =
-        ` From now on the work continues in that terminal on ${nodeName}, not in this conversation: this cloud session keeps running separately, its commands still run in the cloud, and it has no tool to act on ${nodeName}. Tell the user so.`;
+      const handOff = ` From now on the work continues in that session on ${nodeName}, not in this conversation: this cloud session keeps running separately, its commands still run in the cloud, and it has no tool to act on ${nodeName}. Tell the user so${
+        remote ? ", and to switch to the Remote Control session" : ""
+      }.`;
       if (job.ready && !job.ready.confirmed) {
         return `${head} The session is running but could not be verified (${job.ready.detail}).${attach} Tell the user to check it there.${handOff}`;
       }

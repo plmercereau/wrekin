@@ -106,14 +106,16 @@ func (c *Claude) Trust(dir string) error {
 	return c.write(doc, existed)
 }
 
-// onboardingKey is set by Claude Code once its first-run screens (the theme
-// choice among them) are done; until then every interactive start shows
-// them, a teleport in a detached terminal included.
-const onboardingKey = "hasCompletedOnboarding"
+// firstRunKeys are set by Claude Code once its first-run screens are done:
+// hasCompletedOnboarding for the theme choice and the rest of onboarding,
+// remoteDialogSeen for the Remote Control consent ("Enable Remote
+// Control?"). Until then an interactive start shows them, a teleport in a
+// detached terminal included, where no one answers until the user attaches.
+var firstRunKeys = []string{"hasCompletedOnboarding", "remoteDialogSeen"}
 
-// CompleteOnboarding sets hasCompletedOnboarding to true, so that Claude Code
-// opens a teleported session instead of its theme picker, which no one
-// answers on a node until the user attaches. It reports whether it changed
+// CompleteOnboarding sets the firstRunKeys to true, so that Claude Code
+// opens a teleported session, with Remote Control, instead of its theme
+// picker or its Remote Control consent. It reports whether it changed
 // anything; a missing file is created as Trust does, and the same backup is
 // written first.
 func (c *Claude) CompleteOnboarding() (bool, error) {
@@ -126,11 +128,18 @@ func (c *Claude) CompleteOnboarding() (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	var done bool
-	if raw, ok := doc.top[onboardingKey]; ok && json.Unmarshal(raw, &done) == nil && done {
+	changed := false
+	for _, key := range firstRunKeys {
+		var done bool
+		if raw, ok := doc.top[key]; ok && json.Unmarshal(raw, &done) == nil && done {
+			continue
+		}
+		doc.top[key] = json.RawMessage("true")
+		changed = true
+	}
+	if !changed {
 		return false, nil
 	}
-	doc.top[onboardingKey] = json.RawMessage("true")
 	return true, c.write(doc, existed)
 }
 

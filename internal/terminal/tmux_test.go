@@ -188,7 +188,7 @@ func TestLaunchCreatesTheSocketDirectory(t *testing.T) {
 	// macOS's per-test temporary directories exceed.
 	base, err := os.MkdirTemp("/tmp", "wk")
 	if err != nil {
-		t.Fatal(err)
+		t.Skipf("no short temporary directory here: %v", err)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(base) })
 	dir := filepath.Join(base, "state", "wrekin")
@@ -203,5 +203,30 @@ func TestLaunchCreatesTheSocketDirectory(t *testing.T) {
 	}
 	if info, err := os.Stat(dir); err != nil || info.Mode().Perm() != 0o700 {
 		t.Errorf("socket directory: %v %v", info, err)
+	}
+}
+
+// SendLine types the text literally: a key name in it ("Enter", "C-c") is
+// text, not a key.
+func TestSendLineTypesLiterally(t *testing.T) {
+	tm := newTestTmux(t)
+	session := fmt.Sprintf("wrekin-send-%d", time.Now().UnixNano()%1e6)
+	if err := tm.Launch(context.Background(), session, os.TempDir(), []string{"cat"}); err != nil {
+		t.Fatal(err)
+	}
+	defer tm.Kill(session)
+	if err := tm.SendLine(session, "/remote-control fennec C-c Enter"); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		pane, _ := tm.Capture(session, 20)
+		if strings.Count(pane, "/remote-control fennec C-c Enter") >= 2 { // typed, then echoed by cat
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("pane:\n%s", pane)
+		}
+		time.Sleep(50 * time.Millisecond)
 	}
 }

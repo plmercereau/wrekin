@@ -29,6 +29,8 @@ type Terminal interface {
 	Running(session string) (bool, error)
 	// Capture returns the last lines of the session's pane.
 	Capture(session string, lines int) (string, error)
+	// SendLine types text into the session's pane, literally, then Enter.
+	SendLine(session, text string) error
 	// Kill terminates the session.
 	Kill(session string) error
 	// List returns the sessions whose name starts with prefix.

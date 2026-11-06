@@ -148,6 +148,7 @@ and `claude`.
 | `wrekin sessions` | List the teleport jobs and their tmux sessions |
 | `wrekin attach <session>` | Attach to a session's terminal: `tmux -S ~/.local/state/wrekin/tmux.sock attach`, Wrekin's own tmux server, named by its socket so the daemon and your shell reach the same one whatever `TMUX_TMPDIR` says |
 | `wrekin logs` | Show the daemon log (`-f` to follow, `-n` for the line count) |
+| `wrekin kill <session\|job>...`, `wrekin kill --all` | End teleported sessions: kill their tmux session and end their job (`session_gone`, so teleporting again needs relaunch); `--all` takes every Wrekin session, those an earlier daemon left included. Worktrees stay for `wrekin cleanup` |
 | `wrekin cleanup` | Remove the tmux sessions, worktrees and clones Wrekin created (`--dry-run`, `--yes`); never a repository that existed before Wrekin |
 | `wrekin repos` | List the repository → checkout mappings, declared and learned, and whether each still holds (`--json` available) |
 | `wrekin repos forget <repository>` | Forget a learned mapping (a declared pin lives in `settings.json`) |
@@ -175,7 +176,8 @@ writes it with the defaults if it does not exist.
   },
   "teleport": {
     "terminal": "tmux",
-    "maxConcurrent": 4
+    "maxConcurrent": 4,
+    "remoteControl": true
   },
   "logging": {
     "level": "info"
@@ -190,6 +192,15 @@ writes it with the defaults if it does not exist.
   under the allowed roots before proposing a clone.
 - `teleport.maxConcurrent`: simultaneous teleport preparations (sessions
   already running are not counted).
+- `teleport.remoteControl` (default `true`): put the teleported session
+  under Claude Code's Remote Control, so you continue it from claude.ai/code
+  or the Claude app, as "<node> <session>", as well as with `wrekin attach`
+  on the machine. Claude Code ignores `--remote-control` next to
+  `--teleport`, so once the session is up the daemon types
+  `/remote-control "<node> <session>"` into it, only when the input box is
+  bare (never into a dialog), and hands the link Claude Code prints back to
+  Claude. The Claude conversation that asked for the teleport keeps running
+  in the cloud on its own; it cannot act on the machine.
 - `workspace.repositories` (optional): pins a repository to its checkout.
   Keys take any form a teleport accepts (`owner/name` for GitHub, an
   `https://` or `ssh://` URL, `git@host:owner/name.git`); values are

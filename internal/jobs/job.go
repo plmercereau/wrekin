@@ -135,7 +135,10 @@ func ShortID(cloudSessionID string) string {
 }
 
 // SessionName is the terminal session name for a cloud session.
-func SessionName(cloudSessionID string) string { return "wrekin-" + ShortID(cloudSessionID) }
+func SessionName(cloudSessionID string) string { return sessionPrefix + ShortID(cloudSessionID) }
+
+// sessionPrefix starts every terminal session Wrekin creates.
+const sessionPrefix = "wrekin-"
 
 // BranchName is the isolated worktree branch for a cloud session.
 func BranchName(cloudSessionID string) string { return "wrekin/" + ShortID(cloudSessionID) }

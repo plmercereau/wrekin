@@ -35,8 +35,17 @@ type Harness interface {
 	// Trust records dir as trusted, so the harness does not ask on launch.
 	Trust(dir string) error
 	// LaunchArgs is the argv that resumes the cloud session in the current
-	// directory.
+	// directory, nil when it refuses the id.
 	LaunchArgs(cloudSessionID string) []string
+	// InputIdle reports whether the pane shows the harness's input box empty
+	// and in front, with no dialog over it: only then may a line be typed.
+	InputIdle(pane string) bool
+	// RemoteControlCommand is the line that turns remote control on under
+	// name, "" when the harness has none or refuses the name.
+	RemoteControlCommand(name string) string
+	// RemoteControl reads the pane: whether remote control is on, and the
+	// URL the harness printed for it ("" when none is visible).
+	RemoteControl(pane string) (active bool, url string)
 	// ReadyPattern matches the pane once the harness prompt is visible.
 	ReadyPattern() *regexp.Regexp
 	// SetupScreen names the interactive screen the pane shows when the
