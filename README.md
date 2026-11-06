@@ -70,7 +70,7 @@ machine that has neither; they are appended to the PATH, so your own come
 first. Claude Code is not bundled (see above). In a flake:
 
 ```nix
-inputs.wrekin.url = "github:plmercereau/wrekin";
+inputs.wrekin.url = "github:plmercereau/wrekin/nix"; # the latest release, with its version
 # The package: wrekin.packages.${system}.wrekin
 # The daemon as a user service, with Home Manager:
 {

@@ -75,3 +75,28 @@ jobs:
           git add Formula/wrekin.rb
           git commit -m "wrekin ${GITHUB_REF_NAME}" || { echo "formula unchanged"; exit 0; }
           git push
+
+  nix:
+    name: Nix branch
+    needs: goreleaser
+    if: ${{ !contains(github.ref_name, '-') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      # The tag's tree plus nix/version, on top of the previous `nix` head so
+      # that a commit a flake.lock pinned is never rewritten.
+      - run: |
+          echo "${GITHUB_REF_NAME#v}" > nix/version
+          git add -f nix/version
+          parents="-p $GITHUB_SHA"
+          if git fetch --quiet origin refs/heads/nix:refs/remotes/origin/nix; then
+            parents="-p $(git rev-parse refs/remotes/origin/nix) $parents"
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          commit=$(git commit-tree "$(git write-tree)" $parents -m "nix: $GITHUB_REF_NAME")
+          git push origin "$commit:refs/heads/nix"

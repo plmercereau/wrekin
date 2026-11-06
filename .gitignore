@@ -27,3 +27,6 @@ cloud/wrangler.deploy.json
 
 # git worktrees used during development
 /.worktrees/
+
+# Written on the `nix` branch by the Release workflow only.
+nix/version
