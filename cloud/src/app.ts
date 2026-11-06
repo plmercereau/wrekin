@@ -1,10 +1,15 @@
 import { oauthProviderAuthServerMetadata, oauthProviderOpenIdConfigMetadata } from "@better-auth/oauth-provider";
 import { Hono } from "hono";
 import { nodesApi } from "./api/nodes";
+import { connect } from "./connect";
 import type { Env } from "./env";
+import { layoutError, pageRoutes } from "./pages/routes";
 import { servicesFor } from "./services";
 
 export type AppEnv = { Bindings: Env };
+
+/** Machine clients talk to these prefixes and get JSON errors; browsers get HTML. */
+const wantsJson = (path: string) => path.startsWith("/api/") || path === "/mcp" || path.startsWith("/mcp/");
 
 /** The Hono application; kept apart from the Durable Object export so plain Node can host it. */
 export function createApp() {
@@ -54,7 +59,23 @@ export function createApp() {
 
   app.route("/api/nodes", nodesApi());
 
-  app.get("/", (c) => c.text("Wrekin"));
+  // The nodes' WebSocket.
+  app.get("/connect", connect);
+
+  app.route("/", pageRoutes());
+
+  app.notFound((c) =>
+    wantsJson(new URL(c.req.url).pathname)
+      ? c.json({ error: "not_found", message: `no route for ${c.req.method} ${new URL(c.req.url).pathname}` }, 404)
+      : c.html(layoutError("There is nothing at this address.", "Not found"), 404),
+  );
+
+  app.onError((error, c) => {
+    console.error("unhandled error", error instanceof Error ? error.stack ?? error.message : String(error));
+    return wantsJson(new URL(c.req.url).pathname)
+      ? c.json({ error: "internal", message: "something went wrong on the relay" }, 500)
+      : c.html(layoutError("Something went wrong on the relay. Please try again.", "Error"), 500);
+  });
 
   return app;
 }

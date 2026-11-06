@@ -6,10 +6,10 @@ import { KyselyNodeStore } from "../db/nodes";
 import type { Env } from "../env";
 import { commandNames } from "../protocol";
 import { HubCore, type Attachment, type HubSocket } from "./core";
+import { ACCOUNT_ID_HEADER, PUBLIC_KEY_HEADER } from "./headers";
 
-/** Headers the Worker sets on the forwarded /connect request after looking the node up in D1. */
-export const PUBLIC_KEY_HEADER = "X-Wrekin-Public-Key";
-export const ACCOUNT_ID_HEADER = "X-Wrekin-Account-Id";
+export { ACCOUNT_ID_HEADER, PUBLIC_KEY_HEADER };
+
 
 const commandRequestSchema = z.object({
   nodeId: z.string().min(1),

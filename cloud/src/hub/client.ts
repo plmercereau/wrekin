@@ -1,5 +1,7 @@
+import type { NodeRecord } from "../db/nodes";
 import type { Env } from "../env";
 import type { CommandName, ErrorCode, Harness, ProtocolError } from "../protocol";
+import { ACCOUNT_ID_HEADER, PUBLIC_KEY_HEADER } from "./headers";
 
 /** A node with an authenticated socket, as the hub reports it. */
 export type OnlineNode = {
@@ -15,6 +17,8 @@ export type Result<T> = { ok: true; data: T } | { ok: false; error: ProtocolErro
 export interface HubClient {
   online(): Promise<OnlineNode[]>;
   command<T = unknown>(nodeId: string, name: CommandName, params: Record<string, unknown>, timeoutMs?: number): Promise<Result<T>>;
+  /** Forwards a node's WebSocket upgrade to the hub, which runs the handshake against `node.publicKey`. */
+  connect(request: Request, node: NodeRecord): Promise<Response>;
 }
 
 export type HubFactory = (accountId: string) => HubClient;
@@ -40,6 +44,12 @@ export function hubFor(env: Env, accountId: string): HubClient {
       });
       if (!res.ok) throw new Error(`hub /command answered ${res.status}`);
       return (await res.json()) as Result<T>;
+    },
+    connect(request, node) {
+      const headers = new Headers(request.headers);
+      headers.set(PUBLIC_KEY_HEADER, node.publicKey);
+      headers.set(ACCOUNT_ID_HEADER, node.accountId);
+      return stub.fetch(`${HUB_ORIGIN}/connect?nodeId=${encodeURIComponent(node.id)}`, { headers });
     },
   };
 }
