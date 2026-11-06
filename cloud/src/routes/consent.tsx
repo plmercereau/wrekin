@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import { authClient, errorMessage } from "../client/auth";
+import { authClient, errorMessage, signedOAuthQuery } from "../client/auth";
 import { ErrorPage, Status } from "../components";
 import { redirectUriHost } from "../oauth-redirects";
 import { getConsentClient } from "../server/pages";
@@ -16,8 +16,6 @@ export const Route = createFileRoute("/consent")({
       // From the provider's signed query: the one claim about the requester the user can verify.
       redirectHost: redirectUriHost(query.get("redirect_uri")),
       scopes: (query.get("scope") ?? "").split(" ").filter(Boolean),
-      // The whole signed query goes back to the provider with the decision.
-      oauthQuery: query.toString(),
     };
   },
   loader: ({ context }) => (context.clientId ? getConsentClient({ data: context.clientId }) : null),
@@ -27,7 +25,7 @@ export const Route = createFileRoute("/consent")({
 
 /** The OAuth consent page the MCP authorization server redirects to (Claude connecting to /mcp). */
 function Consent() {
-  const { clientId, redirectHost, scopes, oauthQuery } = Route.useRouteContext();
+  const { clientId, redirectHost, scopes } = Route.useRouteContext();
   const client = Route.useLoaderData();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -39,7 +37,9 @@ function Consent() {
   const decide = async (accept: boolean) => {
     setBusy(true);
     setError(null);
-    const { data, error: failure } = await authClient.oauth2.consent({ accept, oauth_query: oauthQuery });
+    // The signed query goes back exactly as the provider wrote it in the URL: the router's
+    // parsed search would turn the repeated `ba_param` into a JSON array and break `sig`.
+    const { data, error: failure } = await authClient.oauth2.consent({ accept, oauth_query: signedOAuthQuery() });
     if (failure) {
       setBusy(false);
       setError(`That did not work: ${errorMessage(failure)}`);
