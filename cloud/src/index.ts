@@ -1,10 +1,5 @@
-import { Hono } from "hono";
-import type { Env } from "./env";
+import { createApp } from "./app";
 
 export { AccountHub } from "./hub/account-hub";
 
-const app = new Hono<{ Bindings: Env }>();
-
-app.get("/", (c) => c.text("Wrekin"));
-
-export default app;
+export default createApp();

@@ -14,7 +14,7 @@ src/index.ts            Worker entry: the Hono app + the AccountHub export
 src/app.ts              routes (auth, pages, node API, connect, MCP)
 src/env.ts              bindings and secrets
 src/auth.ts             Better Auth: GitHub, Google, device authorization, MCP OAuth
-src/auth.config.ts      the same configuration, for the Better Auth CLI
+scripts/                the migration generator (runs under Bun, outside the Worker)
 src/db/                 Kysely types, the node repository
 src/hub/                the Durable Object (account-hub.ts), its pure core and its client
 src/api/nodes.ts        node registration and signed unregistration
@@ -60,11 +60,19 @@ also covered by `test:node`.
 `migrations/0001_auth.sql` is generated from the Better Auth configuration:
 
 ```sh
-bun run db:generate   # bunx @better-auth/cli generate --config src/auth.config.ts
+bun run db:generate   # scripts/generate-auth-migration.ts
 ```
 
-Re-generate it whenever `src/auth.ts` changes its plugins, then review the
-diff. `0002_nodes.sql` is hand-written.
+The script calls the schema generator Better Auth ships (`getMigrations`, the
+one `@better-auth/cli generate` wraps) from the installed version of the
+library, because the published CLI lags the library and omitted three unique
+indexes. Re-generate whenever `src/auth.ts` changes its plugins, then review
+the diff. `0002_nodes.sql` is hand-written.
+
+Better Auth endpoints the agent uses: `POST /api/auth/device/code` (form or
+JSON), `POST /api/auth/device/token` (JSON, or a form body that the Worker
+re-encodes, RFC 8628 style). Sessions can be presented as
+`Authorization: Bearer <session token>`.
 
 ## Deploy
 
