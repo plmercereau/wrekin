@@ -24,6 +24,7 @@ import (
 	"github.com/plmercereau/wrekin/internal/paths"
 	"github.com/plmercereau/wrekin/internal/protocol"
 	"github.com/plmercereau/wrekin/internal/relay"
+	"github.com/plmercereau/wrekin/internal/repos"
 	"github.com/plmercereau/wrekin/internal/terminal"
 	"github.com/plmercereau/wrekin/internal/workspace"
 )
@@ -85,9 +86,12 @@ func Run(ctx context.Context, o Options) error {
 	registry := harness.NewRegistry(claude.New("", "claude"))
 	harn, _ := registry.Get(claude.ID)
 
+	learned := repos.New(paths.RepositoriesFile())
 	runner := jobs.NewRunner(jobs.RunnerDeps{
 		Store:         store,
 		Policy:        policy,
+		Declared:      settings.Workspace.Repositories,
+		Learned:       learned,
 		Git:           gitx.Runner{},
 		Term:          term,
 		Harness:       harn,
@@ -116,7 +120,7 @@ func Run(ctx context.Context, o Options) error {
 
 	d := &daemon{
 		version: o.Version, startedAt: time.Now(), id: id, settings: settings,
-		store: store, runner: runner, term: term, git: gitx.Runner{}, policy: policy,
+		store: store, learned: learned, runner: runner, term: term, git: gitx.Runner{}, policy: policy,
 		client: client, logger: logger, shutdown: cancel,
 	}
 	ln, err := control.Listen(paths.SocketFile())
@@ -167,6 +171,7 @@ type daemon struct {
 	id        *identity.Identity
 	settings  config.Settings
 	store     *jobs.Store
+	learned   *repos.Store
 	runner    *jobs.Runner
 	term      terminal.Terminal
 	git       gitx.Runner

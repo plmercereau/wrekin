@@ -16,14 +16,22 @@ import (
 	"github.com/plmercereau/wrekin/internal/gitx"
 	"github.com/plmercereau/wrekin/internal/harness"
 	"github.com/plmercereau/wrekin/internal/protocol"
+	"github.com/plmercereau/wrekin/internal/repos"
 	"github.com/plmercereau/wrekin/internal/terminal"
 	"github.com/plmercereau/wrekin/internal/workspace"
 )
 
 // RunnerDeps are the collaborators of a Runner.
 type RunnerDeps struct {
-	Store         *Store
-	Policy        *workspace.Policy
+	Store  *Store
+	Policy *workspace.Policy
+	// Declared are the repository pins of settings.json
+	// (workspace.repositories): repository reference to directory, "~"
+	// already expanded. A pin wins over everything else; an invalid pin fails
+	// the job.
+	Declared map[string]string
+	// Learned holds the mappings the daemon found or cloned; nil disables it.
+	Learned       *repos.Store
 	Git           gitx.Runner
 	Term          terminal.Terminal
 	Harness       harness.Harness
@@ -361,12 +369,12 @@ func (r *Runner) prepare(jobID string) {
 		return
 	}
 	job.Repository = &protocol.Repository{Input: ref.Input, URL: ref.URL, Name: ref.Name}
-	checkouts, err := r.deps.Git.FindCheckouts(r.deps.Policy.Roots, ref.URL, 3)
-	if err != nil {
-		r.deps.Logger.Warn("checkout discovery failed", "job", job.ID, "err", err)
+	checkout, ok := r.locate(job, ref)
+	if !ok {
+		return
 	}
-	if len(checkouts) > 0 {
-		job.CheckoutDir = checkouts[0]
+	if checkout != "" {
+		job.CheckoutDir = checkout
 		r.isolate(job)
 		return
 	}
@@ -381,6 +389,100 @@ func (r *Runner) prepare(jobID string) {
 		ProposedPath:  job.ClonePath,
 	}
 	r.save(job, protocol.StateNeedsAttention)
+}
+
+// locate finds an existing checkout of ref, in order: the pin declared in
+// the settings, the mapping learned earlier, the discovery scan. "" means
+// none was found (a clone is to be proposed); ok is false when the job has
+// failed (an invalid pin).
+func (r *Runner) locate(job *Job, ref workspace.RepoRef) (dir string, ok bool) {
+	if pinned, found := r.pinned(ref.URL); found {
+		top, err := repos.Verify(r.deps.Policy, r.deps.Git, pinned, ref.URL)
+		if err != nil {
+			r.failPin(job, ref.URL, err)
+			return "", false
+		}
+		r.deps.Logger.Info("using declared checkout", "job", job.ID, "path", top)
+		return top, true
+	}
+	if r.deps.Learned != nil {
+		entry, found, err := r.deps.Learned.Lookup(ref.URL)
+		switch {
+		case err != nil:
+			r.deps.Logger.Warn("learned mappings unreadable", "job", job.ID, "err", err)
+		case found:
+			top, err := repos.Verify(r.deps.Policy, r.deps.Git, entry.Path, ref.URL)
+			if err == nil {
+				if err := r.deps.Learned.Touch(ref.URL, r.now()); err != nil {
+					r.deps.Logger.Warn("learned mapping not updated", "job", job.ID, "err", err)
+				}
+				r.deps.Logger.Info("using learned checkout", "job", job.ID, "path", top)
+				return top, true
+			}
+			r.deps.Logger.Info("learned mapping no longer holds; forgetting it", "job", job.ID, "path", entry.Path, "reason", err.Error())
+			if _, _, err := r.deps.Learned.Forget(ref.URL); err != nil {
+				r.deps.Logger.Warn("learned mapping not forgotten", "job", job.ID, "err", err)
+			}
+		}
+	}
+	checkouts, err := r.deps.Git.FindCheckouts(r.deps.Policy.Roots, ref.URL, 3)
+	if err != nil {
+		r.deps.Logger.Warn("checkout discovery failed", "job", job.ID, "err", err)
+	}
+	if len(checkouts) == 0 {
+		return "", true
+	}
+	r.learn(job, ref.URL, checkouts[0], repos.SourceDiscovered)
+	return checkouts[0], true
+}
+
+// pinned returns the directory declared for repo, whatever spelling the
+// settings use.
+func (r *Runner) pinned(repo string) (string, bool) {
+	key, ok := workspace.RepoKey(repo)
+	if !ok {
+		return "", false
+	}
+	for declared, dir := range r.deps.Declared {
+		if k, ok := workspace.RepoKey(declared); ok && k == key {
+			return dir, true
+		}
+	}
+	return "", false
+}
+
+// failPin ends a job whose declared checkout cannot be used. A pin is an
+// explicit decision: the job does not fall back to a learned mapping or a
+// scan. The message names the repository, not the local path.
+func (r *Runner) failPin(job *Job, repo string, err error) {
+	where := fmt.Sprintf("the checkout declared for %s in settings.json (workspace.repositories)", repo)
+	problem := repos.Problem("")
+	var ve *repos.VerifyError
+	if errors.As(err, &ve) {
+		problem = ve.Problem
+	}
+	switch problem {
+	case repos.ProblemEscapesRoot:
+		r.fail(job, protocol.CodePathEscapesRoot, where+" resolves outside its allowed directory through a symbolic link", err)
+	case repos.ProblemNotAllowed:
+		r.fail(job, protocol.CodeDirectoryNotAllowed, where+" is outside every allowed directory", err)
+	case repos.ProblemMissing:
+		r.fail(job, protocol.CodeDirectoryNotAllowed, where+" does not exist on this machine", err)
+	case repos.ProblemNotRepository:
+		r.fail(job, protocol.CodeInvalidParams, where+" is not a git repository", err)
+	default:
+		r.fail(job, protocol.CodeInvalidParams, where+" is a checkout of another repository (its origin does not match)", err)
+	}
+}
+
+// learn records a mapping found or made for a job; a failure is only logged.
+func (r *Runner) learn(job *Job, repo, dir string, source repos.Source) {
+	if r.deps.Learned == nil {
+		return
+	}
+	if err := r.deps.Learned.Record(repo, dir, source, r.now()); err != nil {
+		r.deps.Logger.Warn("mapping not learned", "job", job.ID, "path", dir, "err", err)
+	}
 }
 
 // resume continues an approved job.
@@ -406,6 +508,13 @@ func (r *Runner) resume(jobID string) {
 		}
 		job.CreatedClone = true
 		job.CheckoutDir = job.ClonePath
+		if job.Repository != nil {
+			clone := job.ClonePath
+			if canon, err := filepath.EvalSymlinks(clone); err == nil {
+				clone = canon
+			}
+			r.learn(job, job.Repository.URL, clone, repos.SourceCloned)
+		}
 		r.isolate(job)
 	case reasonTrust:
 		job.AttentionReason = ""
