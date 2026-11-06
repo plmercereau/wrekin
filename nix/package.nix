@@ -24,13 +24,12 @@ buildGoModule {
 
   subPackages = [ "cmd/wrekin" ];
 
-  # `null` is the correct value while the module has no dependencies (the
-  # placeholder main from Track C): there is nothing to vendor.
-  #
-  # Once Track A lands (go.sum with cobra, coder/websocket, ...), this MUST be
-  # recomputed: set it to `lib.fakeHash`, run `nix build .#wrekin`, and paste
-  # the hash Nix prints in "got: sha256-...".
-  vendorHash = null;
+  # The hash of the vendored modules (go.sum: cobra, coder/websocket and their
+  # dependencies). Recompute it whenever go.sum changes: either set it to
+  # `lib.fakeHash`, run `nix build .#wrekin` and paste the hash Nix prints in
+  # "got: sha256-...", or run `go mod vendor` in a scratch copy and
+  # `nix hash path --sri ./vendor`, which gives the same value.
+  vendorHash = "sha256-Ec1pha6gNpXmpPkc89yiQHeagLSyxPWsYlOP/2AwyII=";
 
   env.CGO_ENABLED = 0;
 
