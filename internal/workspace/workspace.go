@@ -141,11 +141,23 @@ func (p *Policy) ProposeClonePath(repoName string) string {
 	return candidate
 }
 
+// sanitiseName turns a repository name from the relay into a directory name:
+// only [A-Za-z0-9._-] is kept (the URL path was percent-decoded, so anything
+// else, control characters included, is dropped), a leading "-" or "." is
+// removed so the name cannot be read as an option or hide the directory, and
+// an empty result falls back to "repository".
 func sanitiseName(name string) string {
 	name = strings.TrimSuffix(strings.TrimSpace(name), ".git")
 	name = filepath.Base(strings.ReplaceAll(name, "\\", "/"))
-	name = strings.Trim(name, ". ")
-	if name == "" || name == "/" {
+	var b strings.Builder
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '.', r == '_', r == '-':
+			b.WriteRune(r)
+		}
+	}
+	name = strings.TrimRight(strings.TrimLeft(b.String(), "-."), ".")
+	if name == "" {
 		return "repository"
 	}
 	return name
@@ -157,7 +169,10 @@ func exists(p string) bool {
 }
 
 // canonical resolves symbolic links in the longest existing prefix of p and
-// re-appends the rest, so paths that do not exist yet can be checked too.
+// re-appends the rest, so paths that do not exist yet can be checked too. A
+// component that is a symbolic link but does not resolve (a dangling link) is
+// ErrEscapesRoot: its target cannot be checked against the roots, and treating
+// the link as a plain name would let it stand in for a directory.
 func canonical(p string) (string, error) {
 	rest := ""
 	for cur := p; ; {
@@ -167,6 +182,9 @@ func canonical(p string) (string, error) {
 		}
 		if !errors.Is(err, fs.ErrNotExist) {
 			return "", err
+		}
+		if info, lerr := os.Lstat(cur); lerr == nil && info.Mode()&os.ModeSymlink != 0 {
+			return "", fmt.Errorf("%w: %s is a symbolic link whose target does not exist", ErrEscapesRoot, cur)
 		}
 		parent := filepath.Dir(cur)
 		if parent == cur {
@@ -186,7 +204,9 @@ type RepoRef struct {
 
 var (
 	shorthandRe = regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`)
-	scpLikeRe   = regexp.MustCompile(`^(?:[A-Za-z0-9_.-]+@)?([A-Za-z0-9_.-]+):([^/:][^:]*)$`)
+	// Neither the user, the host nor the path may start with "-": git refuses
+	// such a "strange hostname" itself, but the parser must not forward one.
+	scpLikeRe = regexp.MustCompile(`^(?:[A-Za-z0-9_.][A-Za-z0-9_.-]*@)?([A-Za-z0-9_.][A-Za-z0-9_.-]*):([^/:-][^:]*)$`)
 )
 
 // ParseOptions widens ParseRepository for callers that own the risk.

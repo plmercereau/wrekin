@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -110,6 +111,28 @@ func TestResolveSymlinkIntoRootIsAllowed(t *testing.T) {
 	}
 }
 
+// A symbolic link whose target does not exist cannot be canonicalised; the
+// policy refuses it rather than treating the link as a plain name under the
+// root (git and MkdirAll would then fail with EEXIST on the link).
+func TestResolveDanglingSymlinkIsRefused(t *testing.T) {
+	p, root := newTestPolicy(t)
+	if err := os.Symlink(filepath.Join(t.TempDir(), "nonexistent"), filepath.Join(root, "link")); err != nil {
+		t.Fatal(err)
+	}
+	_, err := p.Resolve(filepath.Join(root, "link", "foo"))
+	if !errors.Is(err, ErrEscapesRoot) {
+		t.Fatalf("root/link/foo: err = %v, want ErrEscapesRoot", err)
+	}
+	_, err = p.Resolve(filepath.Join(root, "link"))
+	if !errors.Is(err, ErrEscapesRoot) {
+		t.Fatalf("root/link: err = %v, want ErrEscapesRoot", err)
+	}
+	// A suffix that merely does not exist yet is still allowed.
+	if _, err := p.Resolve(filepath.Join(root, "missing", "deeper")); err != nil {
+		t.Errorf("root/missing/deeper: %v", err)
+	}
+}
+
 func TestResolveDotDotIsRefused(t *testing.T) {
 	p, root := newTestPolicy(t)
 	_, err := p.Resolve(filepath.Join(root, "..", "other"))
@@ -151,6 +174,21 @@ func TestParseRepositoryForms(t *testing.T) {
 	for _, bad := range []string{"", "wrekin", "/absolute/path", "owner/name/extra", "http://[::1"} {
 		if _, err := ParseRepository(bad); err == nil {
 			t.Errorf("%q: expected an error", bad)
+		}
+	}
+}
+
+// git itself refuses a "strange hostname" starting with "-", but the parser
+// must not forward a user or host that could be read as an option.
+func TestParseRepositoryRefusesDashLeadingUserAndHost(t *testing.T) {
+	for _, bad := range []string{"user@-evil:repo", "-user@host:repo", "-evil:repo", "git@host:-flag/repo"} {
+		if _, err := ParseRepository(bad); err == nil {
+			t.Errorf("%q: expected an error", bad)
+		}
+	}
+	for _, ok := range []string{"git@github.com:a/b.git", "my.user_1@git.example-host.com:org/repo"} {
+		if _, err := ParseRepository(ok); err != nil {
+			t.Errorf("%q: unexpected error %v", ok, err)
 		}
 	}
 }
@@ -217,5 +255,35 @@ func TestProposeClonePathAvoidsCollision(t *testing.T) {
 	}
 	if got := p.ProposeClonePath("../evil"); filepath.Dir(got) != p.DefaultRoot {
 		t.Errorf("a repository name must never leave the default root: %q", got)
+	}
+}
+
+// The directory name comes from the relay-chosen repository path, percent
+// decoded: it must not start with "-" (an option to a later tool) and may hold
+// only a conservative character set.
+func TestProposeClonePathSanitisesHostileNames(t *testing.T) {
+	p, _ := newTestPolicy(t)
+	cases := map[string]string{
+		"-rf":           "rf",
+		"a\nb":          "ab",
+		"wrekin.git":    "wrekin",
+		".hidden":       "hidden",
+		"--":            "repository",
+		"...":           "repository",
+		"":              "repository",
+		"a b\tc":        "abc",
+		"x/y.git":       "y",
+		"my-repo_2.x":   "my-repo_2.x",
+		"caf\u00e9":     "caf",
+		"../../../evil": "evil",
+	}
+	for in, want := range cases {
+		got := p.ProposeClonePath(in)
+		if got != filepath.Join(p.DefaultRoot, want) {
+			t.Errorf("ProposeClonePath(%q) = %q, want %q under the default root", in, got, want)
+		}
+		if strings.ContainsAny(filepath.Base(got), "\n\t ") || strings.HasPrefix(filepath.Base(got), "-") {
+			t.Errorf("ProposeClonePath(%q) = %q is a hostile directory name", in, got)
+		}
 	}
 }
