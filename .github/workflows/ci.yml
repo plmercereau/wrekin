@@ -23,8 +23,8 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
@@ -86,7 +86,7 @@ jobs:
       run:
         working-directory: cloud
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
@@ -98,11 +98,11 @@ jobs:
     name: GoReleaser config
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
-      - uses: goreleaser/goreleaser-action@v6
+      - uses: goreleaser/goreleaser-action@v7
         with:
           version: "~> v2"
           args: check
@@ -111,9 +111,9 @@ jobs:
     name: Nix
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: DeterminateSystems/nix-installer-action@main
-      - uses: DeterminateSystems/magic-nix-cache-action@main
+      - uses: actions/checkout@v7
+      - uses: DeterminateSystems/nix-installer-action@v23
+      - uses: DeterminateSystems/magic-nix-cache-action@v15
       - run: nix flake check
       - run: nix build .#wrekin
       - run: ./result/bin/wrekin --version
@@ -122,7 +122,7 @@ jobs:
     name: Homebrew formula renders
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # `sh` rather than the executable bit: the branch was published through the
       # GitHub API, which keeps file contents but not modes.
       - run: sh packaging/homebrew/render.sh 0.1.0 packaging/homebrew/testdata/checksums.txt > wrekin.rb
