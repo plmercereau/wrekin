@@ -11,8 +11,9 @@ Two halves share one contract, `protocol/PROTOCOL.md`:
 
 - the Go agent (`cmd/wrekin`, `internal/`), module
   `github.com/plmercereau/wrekin`, Go 1.24, no cgo;
-- the Cloudflare Worker (`cloud/`), Bun + TypeScript, Hono, Better Auth,
-  Kysely on D1, one Durable Object per account, the MCP tools.
+- the Cloudflare Worker (`cloud/`), Bun + TypeScript, TanStack Start (React)
+  and tRPC, Better Auth, Kysely on D1, one Durable Object per account, the
+  MCP tools.
 
 The design spec and the implementation plan are in `docs/superpowers/`.
 
@@ -36,7 +37,7 @@ go build ./cmd/wrekin
 cd cloud
 bun install --frozen-lockfile
 bun run typecheck
-bun run test          # vitest with @cloudflare/vitest-pool-workers: local D1 + Durable Objects
+bun run test          # vite build, then vitest with @cloudflare/vitest-plugin: local D1 + Durable Objects
 ```
 
 ## Running both halves locally
@@ -47,8 +48,8 @@ bun run test          # vitest with @cloudflare/vitest-pool-workers: local D1 + 
 
    ```sh
    cd cloud
-   bunx wrangler d1 migrations apply wrekin --local
-   bunx wrangler dev
+   bun run db:migrate:local
+   bun run dev
    ```
 
    The relay then listens on `ws://localhost:8787/connect`, the pages and the

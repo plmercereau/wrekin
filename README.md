@@ -197,7 +197,7 @@ Mobile/Web and on the deployed Worker, is tracked in
 cmd/wrekin/         the binary's entry point
 internal/           the Go agent: CLI, config, identity, relay client, workspace policy,
                     git, tmux, Claude Code adapter, jobs, daemon, service, pairing
-cloud/              the Cloudflare Worker: Hono, Better Auth, Durable Object, MCP tools
+cloud/              the Cloudflare Worker: TanStack Start, tRPC, Better Auth, Durable Object, MCP tools
 protocol/           PROTOCOL.md, the node protocol (normative for both halves)
 nix/                Nix package and Home Manager module (flake.nix at the root)
 packaging/          how releases, Homebrew and the Worker deploy are produced
