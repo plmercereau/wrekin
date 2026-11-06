@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/plmercereau/wrekin/internal/gitx"
 	"github.com/plmercereau/wrekin/internal/harness"
@@ -700,7 +701,15 @@ func (r *Runner) launch(job *Job) {
 	// name alone when the harness refuses the node's).
 	rcName, rcCommand := "", ""
 	if r.deps.RemoteControl {
-		for _, name := range []string{strings.TrimSpace(r.deps.NodeName + " " + session), session} {
+		candidates := []string{strings.TrimSpace(r.deps.NodeName + " " + session), session}
+		if title := remoteControlTitle(job.Params.Title); title != "" {
+			named := title
+			if r.deps.NodeName != "" {
+				named += " (" + r.deps.NodeName + ")"
+			}
+			candidates = append([]string{named}, candidates...)
+		}
+		for _, name := range candidates {
 			if cmd := r.deps.Harness.RemoteControlCommand(name); cmd != "" {
 				rcName, rcCommand = name, cmd
 				break
@@ -814,6 +823,28 @@ func (r *Runner) launch(job *Job) {
 		case <-time.After(r.deps.PollInterval):
 		}
 	}
+}
+
+// remoteControlTitle makes the cloud session's title, which Claude sends,
+// fit for a Remote Control name: letters, digits and common punctuation on
+// one line, other characters as spaces, at most 72 characters, starting with
+// a letter or a digit. "" when nothing is left.
+func remoteControlTitle(title string) string {
+	var b strings.Builder
+	for _, r := range title {
+		switch {
+		case unicode.IsLetter(r), unicode.IsDigit(r), strings.ContainsRune("._,:;'’!?()&+/#-", r):
+			b.WriteRune(r)
+		default:
+			b.WriteRune(' ')
+		}
+	}
+	out := strings.Join(strings.Fields(b.String()), " ")
+	out = strings.TrimLeftFunc(out, func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsDigit(r) })
+	if runes := []rune(out); len(runes) > 72 {
+		out = strings.TrimSpace(string(runes[:72]))
+	}
+	return out
 }
 
 func formatDuration(d time.Duration) string {

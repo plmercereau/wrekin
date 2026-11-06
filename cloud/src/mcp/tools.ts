@@ -73,7 +73,9 @@ export function describeJob(job: Job, nodeName: string): string {
           : "";
       // Users expect the next request to run on the machine; it does not: this conversation stays in the cloud.
       const handOff = ` From now on the work continues in that session on ${nodeName}, not in this conversation: this cloud session keeps running separately, its commands still run in the cloud, and it has no tool to act on ${nodeName}. Tell the user so${
-        remote ? ", and to switch to the Remote Control session" : ""
+        remote
+          ? `, to switch to the Remote Control session, and that this cloud session can be archived from the claude.ai sidebar since "${remote}" replaces it`
+          : ""
       }.`;
       if (job.ready && !job.ready.confirmed) {
         return `${head} The session is running but could not be verified (${job.ready.detail}).${attach} Tell the user to check it there.${handOff}`;
@@ -115,6 +117,13 @@ const jobIdArg = z.string().min(1).max(256).describe("The job id returned by tel
 const sessionArg = z.string().min(1).max(2048).describe("This Claude Code Cloud session: its id (session_…) or its https://claude.ai/code/session_… URL.");
 const repositoryArg = z.string().min(1).max(2048).describe("The Git repository the session works on: a URL or owner/name on GitHub. Helps the machine find or clone the checkout.");
 const directoryArg = z.string().min(1).max(2048).describe("A directory on the machine to use, under one of its allowed roots. `~` is expanded there.");
+const titleArg = z
+  .string()
+  .min(1)
+  .max(200)
+  .describe(
+    "The title of this Claude Code session as the user sees it in the claude.ai sidebar. The session on the machine is listed in claude.ai under that title followed by the machine's name, so the user recognises it next to this one. If you do not know it exactly, a 3 to 8 word summary of the task.",
+  );
 
 export function registerTools(server: McpServer, ctx: ToolContext): void {
   server.registerTool(
@@ -151,16 +160,18 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
         "Returns a Job quickly; the work continues on the machine. Follow it with get_teleport_status. " +
         "A state of needs_attention means the machine needs the user's confirmation (for example to clone a new repository): ask the user, then call approve_repository. " +
         "A ready job with ready.confirmed false is running but unverified: tell the user to open it with the session.attach command. " +
-        "Calling teleport again for the same session returns the existing job; pass relaunch true only when the previous session is gone (error session_gone).",
+        "Calling teleport again for the same session returns the existing job; pass relaunch true only when the previous session is gone (error session_gone). " +
+        "Pass title, this session's title, so the user recognises the session on the machine in claude.ai.",
       inputSchema: z.object({
         node: nodeArg,
         session: sessionArg,
         repository: repositoryArg.optional(),
         directory: directoryArg.optional(),
         relaunch: z.boolean().optional().describe("Launch again when the previous session of this job has disappeared (after a session_gone error)."),
+        title: titleArg.optional(),
       }),
     },
-    async ({ node, session, repository, directory, relaunch }) => {
+    async ({ node, session, repository, directory, relaunch, title }) => {
       const cloudSessionId = parseCloudSessionId(session);
       if (!cloudSessionId) {
         return fail(
@@ -172,6 +183,7 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
       if (repository !== undefined) params.repository = repository;
       if (directory !== undefined) params.directory = directory;
       if (relaunch !== undefined) params.relaunch = relaunch;
+      if (title !== undefined) params.title = title;
       return nodeJobCommand(ctx, node, "teleport", params);
     },
   );

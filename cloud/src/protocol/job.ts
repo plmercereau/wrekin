@@ -65,6 +65,8 @@ export const teleportParamsSchema = z.object({
   repository: z.string().min(1).optional(),
   directory: z.string().min(1).optional(),
   relaunch: z.boolean().optional(),
+  /** The cloud session's title; the node names the Remote Control session after it. */
+  title: z.string().min(1).max(200).optional(),
 });
 export type TeleportParams = z.infer<typeof teleportParamsSchema>;
 

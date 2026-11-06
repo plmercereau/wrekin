@@ -284,6 +284,9 @@ type TeleportParams struct {
 	Repository     string `json:"repository,omitempty"`
 	Directory      string `json:"directory,omitempty"`
 	Relaunch       bool   `json:"relaunch,omitempty"`
+	// Title is the cloud session's title, as Claude knows it; the Remote
+	// Control session is named after it so the user recognises it.
+	Title string `json:"title,omitempty"`
 }
 
 // StatusParams are the parameters of get_teleport_status.

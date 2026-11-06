@@ -120,6 +120,7 @@ Params:
 | `repository` | string, optional | an `https://` or `ssh://`/scp-like Git URL, or `owner/name` (GitHub); used to find or clone the checkout. `file://`, `http://` and `git://` are refused with `invalid_params` |
 | `directory` | string, optional | a path hint under an allowed root; `~` is expanded |
 | `relaunch` | boolean, optional | required to launch again when the previous session is gone |
+| `title` | string, optional, ≤ 200 | the cloud session's title, as Claude knows it; the node names the Remote Control session `<title> (<node>)` after it, keeping letters, digits and common punctuation, at most 72 characters of the title |
 
 Result: a `Job`. Returns within a second: the job is `accepted` (or the
 existing job of the same `(harness, cloudSessionId)`), and the work

@@ -135,7 +135,11 @@ func TestRemoteControlCommand(t *testing.T) {
 	if got := c.RemoteControlCommand("fennec wrekin-ydncipcr"); got != "/remote-control fennec wrekin-ydncipcr" {
 		t.Errorf("command = %q", got)
 	}
-	for _, bad := range []string{"", "-x", " lead", "a;b", "line\nbreak", "/clear"} {
+	// A cloud session's title, with the node: accents, apostrophes, parentheses.
+	if got := c.RemoteControlCommand("Téléporte l'agent: étape 2 (fennec)"); got != "/remote-control Téléporte l'agent: étape 2 (fennec)" {
+		t.Errorf("command = %q", got)
+	}
+	for _, bad := range []string{"", "-x", " lead", "line\nbreak", "tab\there", "/clear", "a\x1b[31m"} {
 		if got := c.RemoteControlCommand(bad); got != "" {
 			t.Errorf("name %q gave %q", bad, got)
 		}
