@@ -140,6 +140,17 @@ describe("AccountHub", () => {
     expect(await hubFor(env, "acc_dup").online()).toHaveLength(1);
   });
 
+  it("evicts a node: its socket closes with 4404 and it is no longer online", async () => {
+    const key = await generateNodeKey();
+    const socket = await authenticate("acc_evict", "node_evict", key);
+    const hub = hubFor(env, "acc_evict");
+    expect(await hub.online()).toHaveLength(1);
+    await hub.evict("node_evict");
+    const closed = await socket.waitClose();
+    expect(closed.code).toBe(closeCodes.unknownNode);
+    expect(await hub.online()).toEqual([]);
+  });
+
   it("answers ping with pong without waking the handler", async () => {
     const key = await generateNodeKey();
     const socket = await authenticate("acc_ping", "node_ping", key);

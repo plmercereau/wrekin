@@ -11,6 +11,8 @@ import { ACCOUNT_ID_HEADER, PUBLIC_KEY_HEADER } from "./headers";
 export { ACCOUNT_ID_HEADER, PUBLIC_KEY_HEADER };
 
 
+const evictRequestSchema = z.object({ nodeId: z.string().min(1) });
+
 const commandRequestSchema = z.object({
   nodeId: z.string().min(1),
   name: z.enum(commandNames),
@@ -65,6 +67,13 @@ export class AccountHub extends DurableObject<Env> {
 
     if (url.pathname === "/nodes/online" && request.method === "GET") {
       return Response.json({ nodes: this.core.online() });
+    }
+
+    if (url.pathname === "/nodes/evict" && request.method === "POST") {
+      const body = evictRequestSchema.safeParse(await request.json().catch(() => null));
+      if (!body.success) return Response.json({ error: "invalid_body", message: z.prettifyError(body.error) }, { status: 400 });
+      this.core.evict(body.data.nodeId);
+      return Response.json({ ok: true });
     }
 
     if (url.pathname === "/command" && request.method === "POST") {

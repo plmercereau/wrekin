@@ -138,11 +138,21 @@ export class HubCore {
     const attachment = socket.getAttachment();
     if (!attachment) return;
     this.clearHandshakeTimer(attachment.connectionId);
-    for (const [id, entry] of this.pending) {
-      if (entry.connectionId !== attachment.connectionId) continue;
-      clearTimeout(entry.timer);
-      this.pending.delete(id);
-      entry.resolve({ ok: false, error: { code: "node_offline", message: "the node disconnected before answering" } });
+    this.failPending(attachment.connectionId, "the node disconnected before answering");
+  }
+
+  /**
+   * The node's row was deleted: every socket of `nodeId`, authenticated or still in its
+   * handshake, is closed with 4404 so the node is offline now and not at its next reconnect,
+   * and its in-flight commands fail with `node_offline`.
+   */
+  evict(nodeId: string): void {
+    for (const socket of this.host.sockets()) {
+      const attachment = socket.getAttachment();
+      if (attachment?.nodeId !== nodeId) continue;
+      this.clearHandshakeTimer(attachment.connectionId);
+      this.failPending(attachment.connectionId, "the node was removed from the account");
+      this.fail(socket, closeCodes.unknownNode, "unknown_node", "the node was removed from the account");
     }
   }
 
@@ -267,6 +277,16 @@ export class HubCore {
     clearTimeout(entry.timer);
     this.pending.delete(result.data.id);
     entry.resolve(result.data.ok ? { ok: true, data: result.data.data } : { ok: false, error: result.data.error });
+  }
+
+  /** Resolves every pending command of one connection with `node_offline`. */
+  private failPending(connectionId: string, message: string): void {
+    for (const [id, entry] of this.pending) {
+      if (entry.connectionId !== connectionId) continue;
+      clearTimeout(entry.timer);
+      this.pending.delete(id);
+      entry.resolve({ ok: false, error: { code: "node_offline", message } });
+    }
   }
 
   private fail(socket: HubSocket, closeCode: number, code: string, message: string): void {

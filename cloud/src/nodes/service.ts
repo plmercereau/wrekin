@@ -121,13 +121,27 @@ export async function registerNode(
   }
 }
 
-/** Removes one of the account's nodes; false when the account has no such node. */
-export function removeNode({ nodes }: NodeServices, accountId: string, id: string): Promise<boolean> {
-  return nodes.deleteNode(accountId, id);
+/** Removes one of the account's nodes and closes its live socket; false when the account has no such node. */
+export async function removeNode({ nodes, hub }: NodeServices, accountId: string, id: string): Promise<boolean> {
+  const removed = await nodes.deleteNode(accountId, id);
+  if (removed) await evict(hub, accountId, id);
+  return removed;
+}
+
+/**
+ * Closes the removed node's socket (4404). Best effort once the row is gone: should the hub
+ * not answer, the node is refused with 404 at its next reconnect anyway.
+ */
+async function evict(hub: HubFactory, accountId: string, nodeId: string): Promise<void> {
+  try {
+    await hub(accountId).evict(nodeId);
+  } catch (error) {
+    console.warn(`nodes: could not evict ${nodeId} from the hub`, error instanceof Error ? error.message : String(error));
+  }
 }
 
 /** A node removes itself with its key, no session involved (`wrekin logout` on a headless box). */
-export async function unregisterNode({ nodes }: NodeServices, input: UnregisterInput): Promise<void> {
+export async function unregisterNode({ nodes, hub }: NodeServices, input: UnregisterInput): Promise<void> {
   const { nodeId, timestamp, signature } = input;
   const at = parseTimestamp(timestamp);
   if (at === null || Math.abs(Date.now() - at) > UNREGISTER_SKEW_SECONDS * 1000) {
@@ -137,5 +151,5 @@ export async function unregisterNode({ nodes }: NodeServices, input: UnregisterI
   if (!node) throw new NodeServiceError(404, "unknown_node", "no node with that id");
   const valid = await verifyEd25519(node.publicKey, unregisterMessage(nodeId, String(timestamp)), signature);
   if (!valid) throw new NodeServiceError(401, "bad_signature", "the signature does not verify against the node's key");
-  await nodes.deleteNode(node.accountId, node.id);
+  if (await nodes.deleteNode(node.accountId, node.id)) await evict(hub, node.accountId, node.id);
 }

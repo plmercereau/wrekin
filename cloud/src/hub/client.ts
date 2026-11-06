@@ -19,6 +19,8 @@ export interface HubClient {
   command<T = unknown>(nodeId: string, name: CommandName, params: Record<string, unknown>, timeoutMs?: number): Promise<Result<T>>;
   /** Forwards a node's WebSocket upgrade to the hub, which runs the handshake against `node.publicKey`. */
   connect(request: Request, node: NodeRecord): Promise<Response>;
+  /** Closes the node's sockets with 4404 once its row is gone, so it is offline at once and reconnects to a 404. */
+  evict(nodeId: string): Promise<void>;
 }
 
 export type HubFactory = (accountId: string) => HubClient;
@@ -50,6 +52,14 @@ export function hubFor(env: Env, accountId: string): HubClient {
       headers.set(PUBLIC_KEY_HEADER, node.publicKey);
       headers.set(ACCOUNT_ID_HEADER, node.accountId);
       return stub.fetch(`${HUB_ORIGIN}/connect?nodeId=${encodeURIComponent(node.id)}`, { headers });
+    },
+    async evict(nodeId) {
+      const res = await stub.fetch(`${HUB_ORIGIN}/nodes/evict`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ nodeId }),
+      });
+      if (!res.ok) throw new Error(`hub /nodes/evict answered ${res.status}`);
     },
   };
 }

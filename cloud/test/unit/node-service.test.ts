@@ -72,7 +72,9 @@ describe("registerNode and removeNode", () => {
     expect(await refusal(registerNode(services, "acc_reg", { name: "laptop", publicKey: (await generateNodeKey()).publicKey }))).toEqual({ status: 409, code: "name_taken" });
     expect(await refusal(registerNode(services, "acc_other", { name: "elsewhere", publicKey: key.publicKey }))).toEqual({ status: 409, code: "key_taken" });
     expect(await removeNode(services, "acc_other", nodeId)).toBe(false);
+    expect(hub.evicted).not.toContain(`acc_other/${nodeId}`); // nothing was removed, nothing is evicted
     expect(await removeNode(services, "acc_reg", nodeId)).toBe(true);
+    expect(hub.evicted).toContain(`acc_reg/${nodeId}`);
     expect(await listNodes(services, "acc_reg")).toHaveLength(0);
   });
 });
@@ -98,5 +100,6 @@ describe("unregisterNode", () => {
     expect(await refusal(unregisterNode(services, { nodeId, timestamp, signature: await (await generateNodeKey()).sign(unregisterMessage(nodeId, timestamp)) }))).toEqual({ status: 401, code: "bad_signature" });
     await unregisterNode(services, { nodeId, timestamp, signature: await key.sign(unregisterMessage(nodeId, timestamp)) });
     expect(await listNodes(services, "acc_unreg")).toHaveLength(0);
+    expect(hub.evicted).toContain(`acc_unreg/${nodeId}`);
   });
 });

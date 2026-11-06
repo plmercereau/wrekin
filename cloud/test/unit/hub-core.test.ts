@@ -175,6 +175,33 @@ describe("handshake", () => {
   });
 });
 
+describe("evict", () => {
+  it("closes every socket of the node with 4404, fails its pending commands and reports it offline", async () => {
+    const hub = makeHub();
+    const key = await generateNodeKey();
+    const other = await connectAndAuth(hub, "node_2", await generateNodeKey());
+    const socket = await connectAndAuth(hub, "node_1", key);
+    const halfway = hub.open("node_1", key.publicKey); // a reconnection still in its handshake
+    const pending = hub.core.command("node_1", "ping", {}, 5000);
+
+    hub.core.evict("node_1");
+
+    expect(socket.closed?.code).toBe(closeCodes.unknownNode);
+    expect(socket.last()).toMatchObject({ type: "error", code: "unknown_node" });
+    expect(halfway.closed?.code).toBe(closeCodes.unknownNode);
+    expect(other.closed).toBeNull();
+    expect(await pending).toMatchObject({ ok: false, error: { code: "node_offline" } });
+    expect(hub.core.online()).toMatchObject([{ nodeId: "node_2" }]);
+    expect(await hub.core.command("node_1", "ping", {}, 1000)).toMatchObject({ ok: false, error: { code: "node_offline" } });
+  });
+
+  it("is a no-op for a node without a socket", () => {
+    const hub = makeHub();
+    expect(() => hub.core.evict("node_absent")).not.toThrow();
+    expect(hub.core.online()).toEqual([]);
+  });
+});
+
 describe("commands", () => {
   it("round-trips a command and its result", async () => {
     const hub = makeHub();

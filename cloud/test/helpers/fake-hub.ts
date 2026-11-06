@@ -11,6 +11,8 @@ export class FakeHub {
   readonly online = new Map<string, OnlineNode[]>();
   readonly results = new Map<string, Result<unknown>>();
   readonly commands: RecordedCommand[] = [];
+  /** Every `evict` the routes asked for, as `accountId/nodeId`. */
+  readonly evicted: string[] = [];
 
   setOnline(accountId: string, nodes: OnlineNode[]) {
     this.online.set(accountId, nodes);
@@ -33,6 +35,10 @@ export class FakeHub {
         return scripted as Result<T>;
       },
       connect: async () => new Response("no hub in this test", { status: 501 }),
+      evict: async (nodeId: string) => {
+        this.evicted.push(`${accountId}/${nodeId}`);
+        this.online.set(accountId, (this.online.get(accountId) ?? []).filter((n) => n.nodeId !== nodeId));
+      },
     };
     return hub;
   };

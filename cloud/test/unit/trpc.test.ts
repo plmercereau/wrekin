@@ -57,6 +57,7 @@ describe("nodes", () => {
     expect(listed[0]).not.toHaveProperty("publicKey");
 
     expect(await mine.nodes.remove({ id: created.nodeId })).toEqual({ id: created.nodeId });
+    expect(hub.evicted).toContain(`${userId}/${created.nodeId}`); // its live socket is closed with 4404
     expect((await code(mine.nodes.remove({ id: created.nodeId }))).code).toBe("NOT_FOUND");
     expect(await mine.nodes.list()).toHaveLength(0);
   });
