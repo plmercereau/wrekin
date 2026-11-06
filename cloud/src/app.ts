@@ -1,5 +1,6 @@
 import { oauthProviderAuthServerMetadata, oauthProviderOpenIdConfigMetadata } from "@better-auth/oauth-provider";
 import { Hono } from "hono";
+import { nodesApi } from "./api/nodes";
 import type { Env } from "./env";
 import { servicesFor } from "./services";
 
@@ -50,6 +51,8 @@ export function createApp() {
   app.on(["GET", "HEAD"], "/.well-known/oauth-protected-resource/*", (c) =>
     servicesFor(c.env).auth.handler(c.req.raw),
   );
+
+  app.route("/api/nodes", nodesApi());
 
   app.get("/", (c) => c.text("Wrekin"));
 

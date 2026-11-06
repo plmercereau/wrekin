@@ -5,6 +5,8 @@ import { buildAuth } from "../../src/auth";
 import type { Env } from "../../src/env";
 import { provideServices, type Services } from "../../src/services";
 import type { Fetcher } from "../shared/auth-suite";
+import { FakeHub } from "./fake-hub";
+import { MemoryNodeStore } from "./memory-nodes";
 
 export const TEST_BASE_URL = "http://localhost:8787";
 
@@ -36,11 +38,14 @@ export function memoryAuth(env: Env) {
   return auth;
 }
 
-/** The Worker hosted in plain Node, with the given services (defaults: memory auth). */
+/** The Worker hosted in plain Node: memory auth, an in-memory node store and a fake hub unless overridden. */
 export function nodeApp(overrides: Partial<Services> = {}) {
   const env = fakeEnv();
-  const auth = overrides.auth ?? memoryAuth(env);
-  const services: Services = { auth, ...overrides };
+  const services: Services = {
+    auth: overrides.auth ?? memoryAuth(env),
+    nodes: overrides.nodes ?? new MemoryNodeStore(),
+    hub: overrides.hub ?? new FakeHub().factory,
+  };
   provideServices(env, services);
   const app = createApp();
   const fetcher: Fetcher = async (path, init) => app.request(path, init, env);
