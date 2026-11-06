@@ -16,6 +16,7 @@ import (
 	"github.com/plmercereau/wrekin/internal/gitx"
 	"github.com/plmercereau/wrekin/internal/harness"
 	"github.com/plmercereau/wrekin/internal/protocol"
+	"github.com/plmercereau/wrekin/internal/repos"
 	"github.com/plmercereau/wrekin/internal/workspace"
 )
 
@@ -178,14 +179,15 @@ func (f *fakeHarness) setTrusted(dir string, v bool) {
 
 // env bundles a runner with its fakes over a temp root.
 type env struct {
-	t      *testing.T
-	root   string
-	store  *Store
-	term   *fakeTerminal
-	harn   *fakeHarness
-	policy *workspace.Policy
-	runner *Runner
-	deps   RunnerDeps
+	t       *testing.T
+	root    string
+	store   *Store
+	term    *fakeTerminal
+	harn    *fakeHarness
+	policy  *workspace.Policy
+	learned *repos.Store
+	runner  *Runner
+	deps    RunnerDeps
 }
 
 func newEnv(t *testing.T, tweak func(*RunnerDeps)) *env {
@@ -203,10 +205,12 @@ func newEnv(t *testing.T, tweak func(*RunnerDeps)) *env {
 	if err != nil {
 		t.Fatal(err)
 	}
-	e := &env{t: t, root: canon, store: store, term: newFakeTerminal(), harn: newFakeHarness(), policy: policy}
+	learned := repos.New(filepath.Join(t.TempDir(), "repositories.json"))
+	e := &env{t: t, root: canon, store: store, term: newFakeTerminal(), harn: newFakeHarness(), policy: policy, learned: learned}
 	e.deps = RunnerDeps{
-		Store:  store,
-		Policy: policy,
+		Store:   store,
+		Policy:  policy,
+		Learned: learned,
 		// The tests clone from local bare repositories; production refuses file://.
 		Git:           gitx.Runner{AllowLocal: true},
 		Term:          e.term,

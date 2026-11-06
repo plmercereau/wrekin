@@ -6,6 +6,7 @@ package paths
 import (
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 const app = "wrekin"
@@ -40,6 +41,25 @@ func LogFile() string { return filepath.Join(StateDir(), "wrekin.log") }
 
 // SocketFile is the unix socket the CLI uses to talk to the daemon.
 func SocketFile() string { return filepath.Join(StateDir(), "wrekin.sock") }
+
+// RepositoriesFile holds the repository mappings the daemon learned.
+func RepositoriesFile() string { return filepath.Join(StateDir(), "repositories.json") }
+
+// ExpandHome replaces a leading "~" or "~/" with the user's home directory.
+// Other forms ("~user") are left alone.
+func ExpandHome(p string) string {
+	if p != "~" && !strings.HasPrefix(p, "~/") {
+		return p
+	}
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return p
+	}
+	if p == "~" {
+		return home
+	}
+	return filepath.Join(home, p[2:])
+}
 
 func home() string {
 	if h, err := os.UserHomeDir(); err == nil && h != "" {

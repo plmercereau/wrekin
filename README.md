@@ -140,6 +140,9 @@ and `claude`.
 | `wrekin attach <session>` | Attach to a session's terminal (`tmux attach`) |
 | `wrekin logs` | Show the daemon log (`-f` to follow, `-n` for the line count) |
 | `wrekin cleanup` | Remove the tmux sessions, worktrees and clones Wrekin created (`--dry-run`, `--yes`); never a repository that existed before Wrekin |
+| `wrekin repos` | List the repository → checkout mappings, declared and learned, and whether each still holds (`--json` available) |
+| `wrekin repos forget <repository>` | Forget a learned mapping (a declared pin lives in `settings.json`) |
+| `wrekin repos pin <repository>` | Print the `settings.json` and Home Manager snippets that declare a learned mapping; writes nothing |
 | `wrekin logout` | Unregister the node from your account and delete the local identity |
 
 ## Configuration
@@ -156,7 +159,10 @@ writes it with the defaults if it does not exist.
   "workspace": {
     "allowedDirectories": ["~/projects", "~/work"],
     "defaultDirectory": "~/projects",
-    "autoDiscover": true
+    "autoDiscover": true,
+    "repositories": {
+      "plmercereau/wrekin": "~/projects/wrekin"
+    }
   },
   "teleport": {
     "terminal": "tmux",
@@ -175,10 +181,29 @@ writes it with the defaults if it does not exist.
   under the allowed roots before proposing a clone.
 - `teleport.maxConcurrent`: simultaneous teleport preparations (sessions
   already running are not counted).
+- `workspace.repositories` (optional): pins a repository to its checkout.
+  Keys take any form a teleport accepts (`owner/name` for GitHub, an
+  `https://` or `ssh://` URL, `git@host:owner/name.git`); values are
+  directories (`~` is expanded) that must lie under an allowed directory and
+  hold a checkout whose `origin` is that repository.
+
+Where a repository is checked out is either **declared** or **learned**, like
+`ssh_config` and `known_hosts`. The declared pins are yours: they live in
+`settings.json`, which Wrekin never writes (only `wrekin auth`, and only to
+create it), so it may be managed read-only by Nix. The learned mappings are
+the daemon's: `~/.local/state/wrekin/repositories.json` (mode 0600) records the
+checkouts the discovery scan found and the clones you approved. A teleport
+uses the declared pin first, and fails if the pin does not hold (an explicit
+decision is never skipped silently); then the learned mapping, dropped if the
+checkout moved or changed origin; then the scan; then it proposes a clone.
+`wrekin repos` shows both kinds, `wrekin repos forget` drops a learned one and
+`wrekin repos pin` prints what to add to the settings to make a learned one
+permanent. `wrekin cleanup` forgets the mapping of a clone it deletes.
 
 Other files, all local to the machine: the node identity (private key) in
 `~/.config/wrekin/identity.json` (mode 0600), jobs in
-`~/.local/state/wrekin/jobs.json`, the log in `~/.local/state/wrekin/wrekin.log`
+`~/.local/state/wrekin/jobs.json`, the learned repository mappings in
+`~/.local/state/wrekin/repositories.json`, the log in `~/.local/state/wrekin/wrekin.log`
 and the control socket `~/.local/state/wrekin/wrekin.sock`
 (`XDG_STATE_HOME` is honoured).
 

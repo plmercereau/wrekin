@@ -24,6 +24,7 @@ import (
 	"github.com/plmercereau/wrekin/internal/paths"
 	"github.com/plmercereau/wrekin/internal/protocol"
 	"github.com/plmercereau/wrekin/internal/relay"
+	"github.com/plmercereau/wrekin/internal/repos"
 	"github.com/plmercereau/wrekin/internal/terminal"
 	"github.com/plmercereau/wrekin/internal/workspace"
 )
@@ -85,9 +86,12 @@ func Run(ctx context.Context, o Options) error {
 	registry := harness.NewRegistry(claude.New("", "claude"))
 	harn, _ := registry.Get(claude.ID)
 
+	learned := repos.New(paths.RepositoriesFile())
 	runner := jobs.NewRunner(jobs.RunnerDeps{
 		Store:         store,
 		Policy:        policy,
+		Declared:      settings.Workspace.Repositories,
+		Learned:       learned,
 		Git:           gitx.Runner{},
 		Term:          term,
 		Harness:       harn,
@@ -116,7 +120,7 @@ func Run(ctx context.Context, o Options) error {
 
 	d := &daemon{
 		version: o.Version, startedAt: time.Now(), id: id, settings: settings,
-		store: store, runner: runner, term: term, git: gitx.Runner{}, policy: policy,
+		store: store, learned: learned, runner: runner, term: term, git: gitx.Runner{}, policy: policy,
 		client: client, logger: logger, shutdown: cancel,
 	}
 	ln, err := control.Listen(paths.SocketFile())
@@ -167,6 +171,7 @@ type daemon struct {
 	id        *identity.Identity
 	settings  config.Settings
 	store     *jobs.Store
+	learned   *repos.Store
 	runner    *jobs.Runner
 	term      terminal.Terminal
 	git       gitx.Runner
@@ -202,6 +207,19 @@ func (d *daemon) handleControl(ctx context.Context, method string, params json.R
 			}
 		}
 		return d.cleanup(ctx, p.DryRun), nil
+	case control.MethodReposForget:
+		var p control.ReposForgetParams
+		if err := json.Unmarshal(params, &p); err != nil {
+			return nil, fmt.Errorf("repos.forget parameters: %w", err)
+		}
+		entry, removed, err := d.learned.Forget(p.Repository)
+		if err != nil {
+			return nil, err
+		}
+		if removed {
+			d.logger.Info("learned mapping forgotten", "repository", entry.Repository, "path", entry.Path)
+		}
+		return control.ReposForgetResult{Removed: removed, Repository: entry.Repository, Path: entry.Path}, nil
 	case control.MethodShutdown:
 		d.logger.Info("shutdown requested through the control socket")
 		go func() {
@@ -260,6 +278,10 @@ func (d *daemon) cleanup(ctx context.Context, dryRun bool) control.CleanupReport
 				if !dryRun {
 					if err := os.RemoveAll(clone); err != nil {
 						report.Errors = append(report.Errors, fmt.Sprintf("clone %s: %v", clone, err))
+					} else if d.learned != nil {
+						if _, err := d.learned.ForgetPath(clone); err != nil {
+							report.Errors = append(report.Errors, fmt.Sprintf("learned mapping of %s: %v", clone, err))
+						}
 					}
 				}
 			}

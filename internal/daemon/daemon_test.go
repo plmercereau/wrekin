@@ -14,9 +14,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/plmercereau/wrekin/internal/control"
 	"github.com/plmercereau/wrekin/internal/gitx"
 	"github.com/plmercereau/wrekin/internal/jobs"
 	"github.com/plmercereau/wrekin/internal/protocol"
+	"github.com/plmercereau/wrekin/internal/repos"
 	"github.com/plmercereau/wrekin/internal/workspace"
 )
 
@@ -320,5 +322,83 @@ func TestCleanupRefusesPathsOutsidePolicy(t *testing.T) {
 	// The job records are dropped either way; the refusal is in the report.
 	if len(report.Jobs) != 6 || len(store.List()) != 0 {
 		t.Errorf("jobs = %v, remaining %d", report.Jobs, len(store.List()))
+	}
+}
+
+// Removing a clone Wrekin made also forgets the mapping learned for it; other
+// mappings stay, and a dry run changes nothing.
+func TestCleanupForgetsLearnedClone(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy, err := workspace.NewPolicy([]string{root}, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := jobs.Open(filepath.Join(t.TempDir(), "jobs.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	learned := repos.New(filepath.Join(t.TempDir(), "repositories.json"))
+	clone := filepath.Join(root, "n")
+	kept := filepath.Join(root, "kept")
+	for _, dir := range []string{clone, kept} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := learned.Record("o/n", clone, repos.SourceCloned, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := learned.Record("o/kept", kept, repos.SourceDiscovered, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	j := &jobs.Job{Job: protocol.Job{ID: "job_clone", State: protocol.StateFailed}, CreatedClone: true, CheckoutDir: clone}
+	if err := store.Put(j); err != nil {
+		t.Fatal(err)
+	}
+	d := &daemon{store: store, learned: learned, term: fakeTerm{}, git: gitx.Runner{}, policy: policy, logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+
+	d.cleanup(context.Background(), true)
+	if _, ok, _ := learned.Lookup("o/n"); !ok {
+		t.Fatal("a dry run must not forget the mapping")
+	}
+	report := d.cleanup(context.Background(), false)
+	if len(report.Clones) != 1 || len(report.Errors) != 0 {
+		t.Fatalf("report = %+v", report)
+	}
+	if _, ok, _ := learned.Lookup("o/n"); ok {
+		t.Error("the mapping of the removed clone must be forgotten")
+	}
+	if _, ok, _ := learned.Lookup("o/kept"); !ok {
+		t.Error("other mappings must stay")
+	}
+}
+
+func TestControlReposForget(t *testing.T) {
+	learned := repos.New(filepath.Join(t.TempDir(), "repositories.json"))
+	if err := learned.Record("https://github.com/o/n", "/p/n", repos.SourceDiscovered, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	d := &daemon{learned: learned, logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	call := func(repo string) control.ReposForgetResult {
+		t.Helper()
+		raw, _ := json.Marshal(control.ReposForgetParams{Repository: repo})
+		out, err := d.handleControl(context.Background(), control.MethodReposForget, raw)
+		if err != nil {
+			t.Fatalf("repos.forget %q: %v", repo, err)
+		}
+		return out.(control.ReposForgetResult)
+	}
+	if res := call("git@github.com:o/n.git"); !res.Removed || res.Path != "/p/n" || res.Repository != "https://github.com/o/n" {
+		t.Errorf("first forget = %+v", res)
+	}
+	if res := call("o/n"); res.Removed {
+		t.Errorf("second forget = %+v, want nothing removed", res)
+	}
+	raw, _ := json.Marshal(control.ReposForgetParams{Repository: "not a repository"})
+	if _, err := d.handleControl(context.Background(), control.MethodReposForget, raw); err == nil {
+		t.Error("an unparsable repository must be an error")
 	}
 }

@@ -309,3 +309,17 @@ func TestProposeClonePathSanitisesHostileNames(t *testing.T) {
 		}
 	}
 }
+
+func TestRepoKeyIsTheNormalisedForm(t *testing.T) {
+	for _, in := range []string{"o/n", "https://github.com/o/n.git", "git@GitHub.com:o/n.git", "ssh://git@github.com/o/n/"} {
+		got, ok := RepoKey(in)
+		if !ok || got != "github.com/o/n" {
+			t.Errorf("RepoKey(%q) = %q, %v; want github.com/o/n", in, got, ok)
+		}
+	}
+	for _, in := range []string{"", "not a repo", "https://github.com/"} {
+		if got, ok := RepoKey(in); ok {
+			t.Errorf("RepoKey(%q) = %q, want no key", in, got)
+		}
+	}
+}

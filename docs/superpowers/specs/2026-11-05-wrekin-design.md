@@ -94,6 +94,7 @@ wrekin sessions
 wrekin attach <session>
 wrekin logs
 wrekin cleanup
+wrekin repos [list|forget|pin]
 wrekin logout
 ```
 
@@ -124,6 +125,17 @@ wrekin logout
 
 Repository → directory associations are optional. Private keys,
 authentication identifiers and job data are stored separately.
+
+Associations are either declared or learned, as `ssh_config` and
+`known_hosts` are. Declared ones are pins in `workspace.repositories`
+(repository reference → directory) in `settings.json`, which the agent never
+writes (it may be managed read-only by Nix). Learned ones belong to the daemon,
+in `~/.local/state/wrekin/repositories.json`: a checkout the discovery scan
+found or a clone the user approved. A pin wins and, being an explicit
+decision, fails the teleport when it does not hold; a learned association that
+no longer holds is dropped and the scan runs. `wrekin repos` lists both,
+forgets learned ones and prints the snippet that turns a learned one into a
+pin.
 
 ## 4. Identity and security
 

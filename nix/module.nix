@@ -4,6 +4,7 @@
 #     enable = true;
 #     settings.name = "workstation";
 #     settings.workspace.allowedDirectories = [ "~/projects" ];
+#     settings.workspace.repositories."owner/name" = "~/projects/name";
 #   };
 #
 # Linux gets a `systemd --user` unit, macOS a launchd agent. The module
@@ -89,6 +90,7 @@ in
             allowedDirectories = [ "~/projects" "~/work" ];
             defaultDirectory = "~/projects";
             autoDiscover = true;
+            repositories."plmercereau/wrekin" = "~/projects/wrekin";
           };
           teleport = {
             terminal = "tmux";

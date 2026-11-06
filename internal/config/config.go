@@ -9,7 +9,11 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
+
+	"github.com/plmercereau/wrekin/internal/paths"
+	"github.com/plmercereau/wrekin/internal/workspace"
 )
 
 // DefaultRelayURL is the production relay endpoint.
@@ -34,6 +38,11 @@ type WorkspaceSettings struct {
 	AllowedDirectories []string `json:"allowedDirectories"`
 	DefaultDirectory   string   `json:"defaultDirectory"`
 	AutoDiscover       bool     `json:"autoDiscover"`
+	// Repositories pins a repository (any form workspace.ParseRepository
+	// accepts) to the directory of its checkout. A pin is an explicit
+	// decision: it wins over what the daemon learned, and an invalid pin fails
+	// the teleport instead of being skipped.
+	Repositories map[string]string `json:"repositories,omitempty"`
 }
 
 // TeleportSettings tunes how sessions are launched.
@@ -90,6 +99,11 @@ func Load(path string) (Settings, error) {
 		s.Workspace.DefaultDirectory = s.Workspace.AllowedDirectories[0]
 	}
 	s.Workspace.DefaultDirectory = filepath.Clean(ExpandHome(s.Workspace.DefaultDirectory))
+	for repo, dir := range s.Workspace.Repositories {
+		if strings.TrimSpace(dir) != "" {
+			s.Workspace.Repositories[repo] = filepath.Clean(ExpandHome(dir))
+		}
+	}
 	if err := s.Validate(); err != nil {
 		return Settings{}, fmt.Errorf("%s: %w", path, err)
 	}
@@ -129,6 +143,9 @@ func (s Settings) Validate() error {
 	if s.Workspace.DefaultDirectory == "" {
 		return errors.New("workspace.defaultDirectory must be set")
 	}
+	if err := validateRepositories(s.Workspace.Repositories); err != nil {
+		return err
+	}
 	if s.Teleport.Terminal != "tmux" {
 		return fmt.Errorf("teleport.terminal %q is not supported (only \"tmux\")", s.Teleport.Terminal)
 	}
@@ -139,6 +156,32 @@ func (s Settings) Validate() error {
 	case "debug", "info", "warn", "error":
 	default:
 		return fmt.Errorf("logging.level %q is not one of debug, info, warn, error", s.Logging.Level)
+	}
+	return nil
+}
+
+// validateRepositories checks the declared mappings: every key is a
+// repository reference, every value a directory, and no repository is
+// declared twice under two spellings.
+func validateRepositories(repos map[string]string) error {
+	keys := make([]string, 0, len(repos))
+	for repo := range repos {
+		keys = append(keys, repo)
+	}
+	sort.Strings(keys)
+	seen := map[string]string{}
+	for _, repo := range keys {
+		if _, err := workspace.ParseRepository(repo); err != nil {
+			return fmt.Errorf("workspace.repositories: %q: %w", repo, err)
+		}
+		if strings.TrimSpace(repos[repo]) == "" {
+			return fmt.Errorf("workspace.repositories: %q has an empty directory", repo)
+		}
+		key, _ := workspace.RepoKey(repo)
+		if other, dup := seen[key]; dup {
+			return fmt.Errorf("workspace.repositories: %q and %q name the same repository", other, repo)
+		}
+		seen[key] = repo
 	}
 	return nil
 }
@@ -198,19 +241,7 @@ func (s Settings) HTTPBaseURL() string {
 
 // ExpandHome replaces a leading "~" or "~/" with the user's home directory.
 // Other forms ("~user") are left alone.
-func ExpandHome(p string) string {
-	if p != "~" && !strings.HasPrefix(p, "~/") {
-		return p
-	}
-	home, err := os.UserHomeDir()
-	if err != nil || home == "" {
-		return p
-	}
-	if p == "~" {
-		return home
-	}
-	return filepath.Join(home, p[2:])
-}
+func ExpandHome(p string) string { return paths.ExpandHome(p) }
 
 // defaultName derives a node name from the hostname: lower-case, without the
 // domain part.

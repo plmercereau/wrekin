@@ -15,7 +15,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/plmercereau/wrekin/internal/config"
+	"github.com/plmercereau/wrekin/internal/paths"
 )
 
 // ErrNotAllowed means the path is outside every allowed root.
@@ -40,7 +40,7 @@ func NewPolicy(allowed []string, defaultDir string) (*Policy, error) {
 	}
 	p := &Policy{}
 	for _, dir := range allowed {
-		abs, err := filepath.Abs(config.ExpandHome(dir))
+		abs, err := filepath.Abs(paths.ExpandHome(dir))
 		if err != nil {
 			return nil, err
 		}
@@ -61,7 +61,7 @@ func NewPolicy(allowed []string, defaultDir string) (*Policy, error) {
 		p.DefaultRoot = p.Roots[0]
 		return p, nil
 	}
-	abs, err := filepath.Abs(config.ExpandHome(defaultDir))
+	abs, err := filepath.Abs(paths.ExpandHome(defaultDir))
 	if err != nil {
 		return nil, err
 	}
@@ -80,7 +80,7 @@ func NewPolicy(allowed []string, defaultDir string) (*Policy, error) {
 // lexically sits under a root but whose canonical form does not is
 // ErrEscapesRoot; a path under no root is ErrNotAllowed. p need not exist.
 func (p *Policy) Resolve(in string) (string, error) {
-	abs, err := filepath.Abs(config.ExpandHome(in))
+	abs, err := filepath.Abs(paths.ExpandHome(in))
 	if err != nil {
 		return "", err
 	}
@@ -293,12 +293,15 @@ func repoNameFromPath(p string) string {
 // scheme and user ignored, host case-insensitive, trailing ".git" and "/"
 // stripped.
 func SameRepository(a, b string) bool {
-	ka, oka := repoKey(a)
-	kb, okb := repoKey(b)
+	ka, oka := RepoKey(a)
+	kb, okb := RepoKey(b)
 	return oka && okb && ka == kb
 }
 
-func repoKey(ref string) (string, bool) {
+// RepoKey returns the normalised form SameRepository compares, "host/path"
+// (for example "github.com/owner/name"), or false when ref is not a
+// repository reference. It keys the repository mappings.
+func RepoKey(ref string) (string, bool) {
 	in := strings.TrimSpace(ref)
 	if in == "" {
 		return "", false

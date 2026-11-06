@@ -171,3 +171,55 @@ func TestExpandHome(t *testing.T) {
 		t.Errorf("ExpandHome(~user/x) = %q, must be left alone", got)
 	}
 }
+
+func TestLoadRepositoriesExpandsTilde(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings.json")
+	body := `{"workspace": {"repositories": {"o/n": "~/projects/n", "git@gitlab.com:g/r.git": "/srv/r/"}}}`
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	home, _ := os.UserHomeDir()
+	if got := s.Workspace.Repositories["o/n"]; got != filepath.Join(home, "projects", "n") {
+		t.Errorf("o/n -> %q", got)
+	}
+	if got := s.Workspace.Repositories["git@gitlab.com:g/r.git"]; got != "/srv/r" {
+		t.Errorf("gitlab -> %q", got)
+	}
+	if Default().Workspace.Repositories != nil {
+		t.Error("the default settings declare no repository")
+	}
+}
+
+func TestValidateRepositories(t *testing.T) {
+	cases := []struct {
+		name  string
+		repos map[string]string
+		ok    bool
+	}{
+		{"none", nil, true},
+		{"shorthand and urls", map[string]string{"o/n": "/a", "https://gitlab.com/g/r": "/b", "git@github.com:x/y.git": "/c"}, true},
+		{"unparsable key", map[string]string{"not a repository": "/a"}, false},
+		{"plain-text transport", map[string]string{"http://example.com/o/n": "/a"}, false},
+		{"empty path", map[string]string{"o/n": ""}, false},
+		{"blank path", map[string]string{"o/n": "  "}, false},
+		{"same repository twice", map[string]string{"o/n": "/a", "git@github.com:o/n.git": "/b"}, false},
+	}
+	for _, c := range cases {
+		s := Default()
+		s.Workspace.Repositories = c.repos
+		err := s.Validate()
+		if c.ok && err != nil {
+			t.Errorf("%s: unexpected error %v", c.name, err)
+		}
+		if !c.ok && err == nil {
+			t.Errorf("%s: expected an error", c.name)
+		}
+		if err != nil && !strings.Contains(err.Error(), "workspace.repositories") {
+			t.Errorf("%s: error %q does not name the key", c.name, err)
+		}
+	}
+}
