@@ -46,9 +46,11 @@ jobs:
       - uses: actions/checkout@v7
         with:
           repository: plmercereau/homebrew-tap
-          # A fine-grained PAT with Contents: read and write on the tap only;
-          # GITHUB_TOKEN cannot push to another repository.
-          token: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+          # A write deploy key of the tap (and of the tap only): GITHUB_TOKEN
+          # cannot push to another repository, and a deploy key, unlike a
+          # personal token, is created from the command line and scoped to
+          # one repository. checkout keeps it for the push below.
+          ssh-key: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
           path: tap
       - name: Download the release checksums
         env:
