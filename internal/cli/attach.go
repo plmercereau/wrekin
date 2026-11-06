@@ -16,9 +16,10 @@ var sessionNameRe = regexp.MustCompile(`^[A-Za-z0-9_.-]+$`)
 
 func newAttachCommand(a *app) *cobra.Command {
 	return &cobra.Command{
-		Use:   "attach <session>",
-		Short: "Attach to a teleported session (replaces this process with tmux)",
-		Args:  cobra.ExactArgs(1),
+		Use:               "attach <session>",
+		Short:             "Attach to a teleported session (replaces this process with tmux)",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: completeOneSession(a),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			session := args[0]
 			if !sessionNameRe.MatchString(session) {

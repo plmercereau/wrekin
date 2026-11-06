@@ -154,6 +154,15 @@ and `claude`.
 | `wrekin repos forget <repository>` | Forget a learned mapping (a declared pin lives in `settings.json`) |
 | `wrekin repos pin <repository>` | Print the `settings.json` and Home Manager snippets that declare a learned mapping; writes nothing |
 | `wrekin logout` | Unregister the node from your account and delete the local identity |
+| `wrekin completion bash\|zsh\|fish\|powershell` | Print the shell completion script |
+
+Completions for bash, zsh and fish come installed with the Homebrew formula
+and the Nix package (Home Manager and NixOS pick them up when the shell's
+completion is enabled). Otherwise, for zsh for instance:
+`wrekin completion zsh > "${fpath[1]}/_wrekin"`. Beyond the commands and
+flags, they offer the live sessions (`attach`, `kill`, with the job ids of
+running sessions for `kill`) and the learned repositories (`repos forget`,
+`repos pin`).
 
 ## Configuration
 

@@ -29,6 +29,11 @@ type app struct {
 	claude claudeSignIn
 	// interactive overrides the terminal check on stdin (tests).
 	interactive func() bool
+	// completeSessions, completeJobs and completeRepos replace the sources
+	// of the shell completion candidates (tests).
+	completeSessions func() []string
+	completeJobs     func() []string
+	completeRepos    func() []string
 }
 
 // errSilent marks errors already explained on stdout; Execute only sets the

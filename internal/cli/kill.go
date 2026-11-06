@@ -24,6 +24,7 @@ func newKillCommand(a *app) *cobra.Command {
 		Long: "Kills the tmux session of each job or session named (see `wrekin sessions`), or of every Wrekin session with --all, " +
 			"those an earlier daemon left behind included. Their jobs end as session_gone, so teleporting the same cloud session " +
 			"again needs relaunch. Worktrees stay; `wrekin cleanup` removes them.",
+		ValidArgsFunction: completeSessionsAndJobs(a),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if all == (len(args) > 0) {
 				return errors.New("name the sessions or jobs to kill, or pass --all")

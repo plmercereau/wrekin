@@ -3,7 +3,9 @@
 # Called by flake.nix through `pkgs.callPackage`; `version` is injected there.
 {
   lib,
+  stdenv,
   buildGoModule,
+  installShellFiles,
   makeBinaryWrapper,
   gitMinimal,
   tmux,
@@ -42,7 +44,10 @@ buildGoModule {
     "-X main.version=${version}"
   ];
 
-  nativeBuildInputs = [ makeBinaryWrapper ];
+  nativeBuildInputs = [
+    installShellFiles
+    makeBinaryWrapper
+  ];
 
   # Runtime dependencies. The daemon execs `git`, `tmux` and `claude` by name
   # (a PATH lookup in internal/gitx, internal/terminal and
@@ -69,15 +74,27 @@ buildGoModule {
   # wrapped binary, and records a PATH built from the invoking shell plus
   # ~/.local/bin, so git and tmux are found there too. The Home Manager module
   # remains the declarative way to run the daemon.
-  postInstall = ''
-    wrapProgram $out/bin/wrekin \
-      --suffix PATH : ${
-        lib.makeBinPath [
-          gitMinimal
-          tmux
-        ]
-      }
-  '';
+  #
+  # The bash, zsh and fish completions come from cobra's `wrekin completion
+  # <shell>`, generated before the wrapping, when the build can run the
+  # binary (not when cross-compiling). Home Manager and NixOS pick them up
+  # from share/ with the shells' completion enabled.
+  postInstall =
+    lib.optionalString (stdenv.buildPlatform.canExecute stdenv.hostPlatform) ''
+      installShellCompletion --cmd wrekin \
+        --bash <($out/bin/wrekin completion bash) \
+        --zsh <($out/bin/wrekin completion zsh) \
+        --fish <($out/bin/wrekin completion fish)
+    ''
+    + ''
+      wrapProgram $out/bin/wrekin \
+        --suffix PATH : ${
+          lib.makeBinPath [
+            gitMinimal
+            tmux
+          ]
+        }
+    '';
 
   meta = {
     description = "Teleport a Claude Code Cloud session onto one of your own machines, from Claude, with no inbound connection";
