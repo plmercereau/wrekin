@@ -76,8 +76,14 @@ release:
     ## Install
 
     - Homebrew: `brew install plmercereau/tap/wrekin`
-    - Nix: `nix run github:plmercereau/wrekin`
-    - Or download the archive for your platform above.
+    - Nix: `nix run github:plmercereau/wrekin/{{ .Tag }}`
+    - Or download the archive for your platform above, check it against
+      `checksums.txt` and put `wrekin` on your PATH.
+
+    The daemon runs `git`, `tmux` and Claude Code (`claude`), which must be
+    installed on the machine: the Homebrew formula brings tmux, the Nix
+    package git and tmux; Claude Code comes from its native installer, the
+    `claude-code` Homebrew cask or nixpkgs. The README has the details.
 
 # The Homebrew formula is not GoReleaser's: its `brews` section is deprecated
 # in favour of casks, and a cask cannot carry the `service` block that
