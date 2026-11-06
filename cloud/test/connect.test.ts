@@ -10,7 +10,8 @@ import { listNodesOverHttp } from "./helpers/trpc-http";
 // /connect route, which forwards the upgrade to the account's hub.
 describe("GET /connect through the Worker", () => {
   it("upgrades a registered node and runs the handshake", async () => {
-    const { headers } = await createTestSession(createAuth(env), "connect-user");
+    // The bearer session is revoked once the node is registered; the list is read with the cookie one.
+    const { headers, cookieHeaders } = await createTestSession(createAuth(env), "connect-user");
     const key = await generateNodeKey();
     const created = await SELF.fetch(`${env.BASE_URL}/api/nodes`, {
       method: "POST",
@@ -47,7 +48,7 @@ describe("GET /connect through the Worker", () => {
     const welcome = await next();
     expect(welcome).toMatchObject({ type: "welcome", nodeId, pingSeconds: 30 });
 
-    const nodes = await listNodesOverHttp((path, init) => SELF.fetch(`${env.BASE_URL}${path}`, init))(headers);
+    const nodes = await listNodesOverHttp((path, init) => SELF.fetch(`${env.BASE_URL}${path}`, init))(cookieHeaders);
     expect(nodes.find((n) => n.id === nodeId)?.online).toBe(true);
     ws.close(1000, "done");
   });

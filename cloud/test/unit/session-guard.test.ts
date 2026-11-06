@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { loginRedirect, safeRedirect } from "../../src/session-guard";
+import { loginRedirect, safeRedirect } from "../../src/redirects";
 
 describe("safeRedirect", () => {
   it("keeps a same-origin path, query string included", () => {
