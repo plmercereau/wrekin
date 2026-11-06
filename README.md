@@ -39,9 +39,14 @@ Status: MVP, Claude Code only. See [Status](#status) before relying on it.
 
 ## Install
 
-The daemon is one static binary for Linux and macOS, amd64 and arm64. It
-needs `git`, `tmux` and [Claude Code](https://docs.anthropic.com/claude-code)
-installed on the machine.
+The daemon is one static binary for Linux and macOS, amd64 and arm64. At
+runtime it runs three programs it does not ship, looked up on its PATH:
+`git`, `tmux` and [Claude Code](https://docs.anthropic.com/claude-code)
+(`claude`). Install Claude Code with its native installer
+(`curl -fsSL https://claude.ai/install.sh | bash`, which keeps
+`~/.local/bin/claude` up to date by itself), with
+`brew install --cask claude-code` on macOS, or from nixpkgs (`claude-code`,
+an unfree package). Each channel below brings the rest.
 
 Homebrew (macOS and Linux):
 
@@ -49,22 +54,49 @@ Homebrew (macOS and Linux):
 brew install plmercereau/tap/wrekin
 ```
 
+The formula depends on tmux; git is already there, Homebrew requires it.
+`brew services start wrekin` runs the daemon with `~/.local/bin`, Homebrew's
+prefix and the system directories on its PATH, so it finds `claude` from
+either installer.
+
 Nix:
 
 ```sh
 nix run github:plmercereau/wrekin -- --version
-# or, in a flake: inputs.wrekin.url = "github:plmercereau/wrekin";
-#   packages: wrekin.packages.${system}.wrekin
-#   Home Manager: imports = [ wrekin.homeManagerModules.wrekin ]; services.wrekin.enable = true;
 ```
 
-The Nix flake covers `x86_64-linux`, `aarch64-linux` and `aarch64-darwin`
-(nixpkgs no longer supports Intel Macs; use Homebrew or the release archive
-there).
+The package wraps the binary so that `git` and `tmux` are found even on a
+machine that has neither; they are appended to the PATH, so your own come
+first. Claude Code is not bundled (see above). In a flake:
+
+```nix
+inputs.wrekin.url = "github:plmercereau/wrekin";
+# The package: wrekin.packages.${system}.wrekin
+# The daemon as a user service, with Home Manager:
+{
+  imports = [ wrekin.homeManagerModules.wrekin ];
+  services.wrekin = {
+    enable = true;
+    settings.name = "workstation";
+    settings.workspace.allowedDirectories = [ "~/projects" ];
+    # claudePackage = pkgs.claude-code; # the default when nixpkgs.config.allowUnfree is set, null otherwise
+    # path = [ pkgs.git pkgs.tmux ];    # what the daemon finds after ~/.local/bin and your profile
+  };
+}
+```
+
+The module runs `wrekin daemon` under `systemd --user` on Linux and launchd
+on macOS, with a PATH of `~/.local/bin`, your Home Manager profile, Homebrew
+on macOS, `services.wrekin.path` (git, tmux, and `claudePackage` when set)
+and the system directories, in that order: what you installed yourself wins.
+Pairing (`wrekin auth`) stays a manual, one-time step. The flake covers
+`x86_64-linux`, `aarch64-linux` and `aarch64-darwin` (nixpkgs no longer
+supports Intel Macs; use Homebrew or the release archive there).
 
 GitHub Releases: download the archive for your platform from
 <https://github.com/plmercereau/wrekin/releases>, verify it against
-`checksums.txt`, and put `wrekin` on your `PATH`.
+`checksums.txt`, and put `wrekin` on your `PATH`, along with `git`, `tmux`
+and `claude`.
 
 ## Quick start
 

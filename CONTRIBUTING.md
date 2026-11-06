@@ -19,7 +19,10 @@ The design spec and the implementation plan are in `docs/superpowers/`.
 
 ## Tooling
 
-`nix develop` gives a shell with Go, gopls, Bun, GoReleaser, tmux and git.
+`nix develop` gives a shell with Go, gopls, Bun, GoReleaser, tmux and git,
+which is what the agent needs to run (`go run ./cmd/wrekin start --foreground`
+also needs `claude`: your own Claude Code, or nixpkgs' unfree `claude-code`,
+which joins the shell with `NIXPKGS_ALLOW_UNFREE=1 nix develop --impure`).
 Without Nix, install Go ≥ 1.24, Bun, tmux and git yourself.
 
 ## The Go agent
@@ -79,15 +82,20 @@ bun run test          # vite build, then vitest with @cloudflare/vitest-plugin: 
 - `goreleaser check` validates `.goreleaser.yaml`
   (`nix shell nixpkgs#goreleaser -c goreleaser check`).
 - `nix flake check` evaluates the package, the dev shell and the Home Manager
-  module on Linux and darwin; `nix build .#wrekin` builds the agent. After a
-  change to `go.mod`/`go.sum`, refresh `vendorHash` in `nix/package.nix`
-  (set it to `lib.fakeHash`, build, paste the hash Nix prints).
-- `packaging/README.md` explains releases, the Homebrew tap and the GitHub
-  secrets.
+  module on Linux and darwin (the `home-manager-module` check renders the
+  unit, the agent, the daemon's PATH and the `claudePackage` default to
+  JSON); `nix build .#wrekin` builds the agent, wrapped with git and tmux.
+  After a change to `go.mod`/`go.sum`, refresh `vendorHash` in
+  `nix/package.nix` (set it to `lib.fakeHash`, build, paste the hash Nix
+  prints). `nix fmt` formats the Nix files (nixfmt).
+- `sh packaging/homebrew/render.sh 0.1.0 packaging/homebrew/testdata/checksums.txt | ruby -c`
+  checks the Homebrew formula template.
+- `packaging/README.md` explains releases, the runtime dependencies per
+  channel, the Homebrew tap and the GitHub secrets.
 
 ## Pull requests
 
-CI runs the Go tests on Linux and macOS, the Worker tests, `goreleaser check`
-and `nix flake check`. Keep the protocol document in step with both
+CI runs the Go tests on Linux and macOS, the Worker tests, `goreleaser check`,
+`nix flake check` and `nix build`, and renders the Homebrew formula. Keep the protocol document in step with both
 implementations: a wire change bumps `v` and gets a changelog line in
 `protocol/PROTOCOL.md`.
