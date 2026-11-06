@@ -24,11 +24,31 @@ let
       "${config.home.homeDirectory}/Library/Logs"
     else
       "${config.home.homeDirectory}/.local/state/wrekin";
-  # The daemon spawns git, tmux and claude: give it a PATH that finds them
-  # even though services do not inherit the interactive shell environment.
+
+  # nixpkgs' claude-code is unfree: merely referencing it in a configuration
+  # that does not allow unfree packages aborts the whole evaluation, so the
+  # default of `claudePackage` cannot simply be `pkgs.claude-code`. It is
+  # pkgs.claude-code when that package exists in the user's nixpkgs and
+  # evaluates (allowUnfree, an allowUnfreePredicate that admits it, or
+  # NIXPKGS_ALLOW_UNFREE=1 with --impure), and null otherwise. tryEval catches
+  # nixpkgs' refusal, which is a throw.
+  claudeCodeEvaluates =
+    (pkgs ? claude-code) && (builtins.tryEval (builtins.seq pkgs.claude-code.outPath true)).success;
+
+  # Where the daemon looks for `git`, `tmux` and `claude`: it execs them by
+  # name (internal/gitx, internal/terminal, internal/harness/claude) and no
+  # setting overrides that. Services inherit none of the interactive shell's
+  # environment, so the module builds the PATH itself:
+  #   1. ~/.local/bin and the Home Manager profile: the tools the user
+  #      installed and updates themselves come first, notably `claude` from
+  #      Claude Code's native installer, which keeps ~/.local/bin/claude
+  #      current on its own; on macOS Homebrew's directories, where
+  #      `brew install --cask claude-code` lands, follow;
+  #   2. `services.wrekin.path`: the module's own guarantee that git, tmux and
+  #      (when `claudePackage` is set) Claude Code exist;
+  #   3. the system directories last.
   servicePath = lib.concatStringsSep ":" (
     [
-      (lib.makeBinPath cfg.path)
       "${config.home.homeDirectory}/.local/bin"
       "${config.home.profileDirectory}/bin"
     ]
@@ -36,6 +56,7 @@ let
       "/opt/homebrew/bin"
       "/usr/local/bin"
     ]
+    ++ lib.optional (cfg.path != [ ]) (lib.makeBinPath cfg.path)
     ++ [
       "/usr/bin"
       "/bin"
@@ -83,17 +104,37 @@ in
       '';
     };
 
+    claudePackage = lib.mkOption {
+      type = lib.types.nullOr lib.types.package;
+      default = if claudeCodeEvaluates then pkgs.claude-code else null;
+      defaultText = lib.literalExpression "if unfree packages are allowed then pkgs.claude-code else null";
+      example = lib.literalExpression "pkgs.claude-code";
+      description = ''
+        The Claude Code package put on the daemon's PATH, or `null` to rely
+        on a Claude Code installed outside Nix: the native installer's
+        `~/.local/bin/claude` and, on macOS, Homebrew's cask are on the PATH
+        already, and whatever is there takes precedence over this package.
+
+        nixpkgs' `claude-code` is unfree, so the default is that package only
+        when the configuration allows it (`nixpkgs.config.allowUnfree = true`
+        or an `allowUnfreePredicate` that admits `claude-code`), and `null`
+        otherwise. It also lags upstream; the native installer updates itself.
+      '';
+    };
+
     path = lib.mkOption {
       type = lib.types.listOf lib.types.package;
       default = [
         pkgs.git
         pkgs.tmux
-      ];
-      defaultText = lib.literalExpression "[ pkgs.git pkgs.tmux ]";
+      ]
+      ++ lib.optional (cfg.claudePackage != null) cfg.claudePackage;
+      defaultText = lib.literalExpression "[ pkgs.git pkgs.tmux ] ++ lib.optional (claudePackage != null) claudePackage";
       description = ''
-        Packages added to the daemon's PATH. `~/.local/bin` (where Claude
-        Code's installer puts `claude`) and the Home Manager profile are
-        always included.
+        Packages on the daemon's PATH, after `~/.local/bin`, the Home Manager
+        profile and (on macOS) Homebrew, and before the system directories:
+        the daemon runs `git`, `tmux` and `claude`, and finds them here when
+        the user has not installed them otherwise.
       '';
     };
   };
@@ -113,6 +154,8 @@ in
           Unit = {
             Description = "Wrekin agent";
             Documentation = "https://github.com/plmercereau/wrekin";
+            # `After` alone orders nothing unless the target is pulled in.
+            Wants = [ "network-online.target" ];
             After = [ "network-online.target" ];
           };
           Service = {
@@ -138,6 +181,7 @@ in
             ];
             RunAtLoad = true;
             KeepAlive = true;
+            # launchd starts agents with PATH=/usr/bin:/bin:/usr/sbin:/sbin.
             EnvironmentVariables = {
               PATH = servicePath;
             };

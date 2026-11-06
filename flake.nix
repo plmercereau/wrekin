@@ -24,6 +24,17 @@
       version = "0.0.0-${self.shortRev or self.dirtyShortRev or "dev"}";
 
       mkWrekin = pkgs: pkgs.callPackage ./nix/package.nix { inherit version; };
+
+      # nixpkgs' claude-code is unfree, so it cannot be listed unconditionally:
+      # the dev shell and `nix flake check` would fail to evaluate for anyone
+      # who has not allowed unfree packages. It is included when the
+      # evaluation allows it (`NIXPKGS_ALLOW_UNFREE=1 nix develop --impure`),
+      # and left out otherwise; the native installer's claude works as well.
+      claudeCodeIfAllowed =
+        pkgs:
+        lib.optional (
+          (pkgs ? claude-code) && (builtins.tryEval (builtins.seq pkgs.claude-code.outPath true)).success
+        ) pkgs.claude-code;
     in
     {
       packages = forAllSystems (pkgs: rec {
@@ -43,15 +54,19 @@
 
       devShells = forAllSystems (pkgs: {
         default = pkgs.mkShell {
-          packages = with pkgs; [
-            go
-            gopls
-            gotools
-            bun # the Worker in cloud/ (wrangler comes with `bunx wrangler`)
-            goreleaser
-            tmux
-            git
-          ];
+          packages =
+            with pkgs;
+            [
+              go
+              gopls
+              gotools
+              bun # the Worker in cloud/ (wrangler comes with `bunx wrangler`)
+              goreleaser
+              # What the agent execs at runtime, for `go run ./cmd/wrekin start --foreground`.
+              tmux
+              git
+            ]
+            ++ claudeCodeIfAllowed pkgs;
         };
       });
 
@@ -131,6 +146,9 @@
             builtins.toJSON {
               packages = map lib.getName evaluated.home.packages;
               settings = evaluated.xdg.configFile."wrekin/settings.json".source;
+              # null here: the flake's nixpkgs allows no unfree package.
+              claudePackage = evaluated.services.wrekin.claudePackage;
+              path = map lib.getName evaluated.services.wrekin.path;
               systemd = evaluated.systemd.user.services;
               launchd = evaluated.launchd.agents;
             }

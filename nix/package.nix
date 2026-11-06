@@ -4,6 +4,9 @@
 {
   lib,
   buildGoModule,
+  makeBinaryWrapper,
+  gitMinimal,
+  tmux,
   version ? "dev",
 }:
 
@@ -38,6 +41,42 @@ buildGoModule {
     "-w"
     "-X main.version=${version}"
   ];
+
+  nativeBuildInputs = [ makeBinaryWrapper ];
+
+  # Runtime dependencies. The daemon execs `git`, `tmux` and `claude` by name
+  # (a PATH lookup in internal/gitx, internal/terminal and
+  # internal/harness/claude; no setting overrides them), so the installed
+  # binary gets git and tmux *appended* to its PATH: `nix run` and
+  # `nix profile install` then work on a machine that has neither, while the
+  # tools the user installed and maintains themselves keep precedence (the
+  # user attaches to the daemon's tmux sessions with their own tmux).
+  # gitMinimal: the daemon only clones, fetches and manages worktrees; the
+  # full git (perl, manual, keychain helper) is the user's to install.
+  #
+  # Claude Code is deliberately not wrapped in:
+  # - nixpkgs' `claude-code` is unfree. A hard dependency would make
+  #   `nix build`, `nix run github:plmercereau/wrekin` and `nix flake check`
+  #   fail for everyone who has not allowed unfree packages, CI included.
+  # - It lags upstream, and most users run the native installer, which keeps
+  #   `~/.local/bin/claude` up to date by itself (or the Homebrew cask).
+  # The Home Manager module (nix/module.nix) puts `~/.local/bin` on the
+  # service's PATH and offers `services.wrekin.claudePackage` for those who
+  # want the nixpkgs package.
+  #
+  # Limit: `wrekin start` installs a systemd/launchd service from
+  # os.Executable(), which is the wrapped binary, not this wrapper, so the
+  # appended PATH does not reach that service. The Home Manager module sets
+  # the service's PATH itself; prefer it (or `brew services`) for the daemon.
+  postInstall = ''
+    wrapProgram $out/bin/wrekin \
+      --suffix PATH : ${
+        lib.makeBinPath [
+          gitMinimal
+          tmux
+        ]
+      }
+  '';
 
   meta = {
     description = "Teleport a Claude Code Cloud session onto one of your own machines, from Claude, with no inbound connection";
