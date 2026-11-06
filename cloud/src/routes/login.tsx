@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import { authClient, errorMessage } from "../client/auth";
+import { authClient, errorMessage, signedOAuthQuery } from "../client/auth";
 import { Status } from "../components";
 import { safeRedirect } from "../session-guard";
 
@@ -11,7 +11,7 @@ export const Route = createFileRoute("/login")({
     const query = new URLSearchParams(location.searchStr);
     return {
       redirect: safeRedirect(query.get("redirect"), "/nodes"),
-      oauthQuery: query.has("sig") ? query.toString() : null,
+      resumesAuthorization: query.has("sig"),
     };
   },
   head: () => ({ meta: [{ title: "Sign in · Wrekin" }] }),
@@ -23,12 +23,12 @@ type SocialBody = Parameters<typeof authClient.signIn.social>[0];
 
 /** Two buttons, one per identity provider. `redirect` is where to land afterwards. */
 function Login() {
-  const { user, redirect, oauthQuery } = Route.useRouteContext();
+  const { user, redirect, resumesAuthorization } = Route.useRouteContext();
   const [status, setStatus] = useState<{ text: string | null; error: boolean }>({ text: null, error: false });
 
   const signIn = async (provider: Provider) => {
     setStatus({ text: "Redirecting…", error: false });
-    const body = { provider, callbackURL: redirect, ...(oauthQuery ? { oauth_query: oauthQuery } : {}) } as SocialBody;
+    const body = { provider, callbackURL: redirect, ...(resumesAuthorization ? { oauth_query: signedOAuthQuery() } : {}) } as SocialBody;
     const { data, error } = await authClient.signIn.social(body);
     if (error) {
       setStatus({ text: `Sign-in failed: ${errorMessage(error)}`, error: true });

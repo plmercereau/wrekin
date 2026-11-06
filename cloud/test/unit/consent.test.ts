@@ -155,3 +155,36 @@ describe("Claude's connector scope", () => {
     expect(target.pathname).toBe("/consent");
   });
 });
+
+// The consent decision must carry the signed query exactly as the provider put it in the
+// URL. TanStack Router's parsed search re-serialises a repeated parameter (`ba_param`) as a
+// JSON array, which the signature check refuses (invalid_signature).
+describe("the consent decision", () => {
+  it("is accepted with the raw signed query and refused with the router's re-serialised one", async () => {
+    const { fetcher, services } = nodeWorker();
+    const redirectUri = "https://claude.ai/api/mcp/auth_callback";
+    const clientId = await registerClient(fetcher, redirectUri);
+    const { headers, cookieHeaders } = await createTestSession(services.auth, "consent-decision-user");
+    const target = await authorize(fetcher, headers, clientId, redirectUri);
+    const raw = target.search.replace(/^\?/, "");
+    expect(new URLSearchParams(raw).getAll("ba_param").length).toBeGreaterThan(1);
+
+    const { defaultParseSearch, defaultStringifySearch } = await import("@tanstack/router-core");
+    const reserialised = defaultStringifySearch(defaultParseSearch(target.search)).replace(/^\?/, "");
+    const refused = await fetcher("/api/auth/oauth2/consent", {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: TEST_BASE_URL, ...cookieHeaders },
+      body: JSON.stringify({ accept: true, oauth_query: reserialised }),
+    });
+    expect(await refused.text()).toContain("invalid_signature");
+
+    const accepted = await fetcher("/api/auth/oauth2/consent", {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: TEST_BASE_URL, ...cookieHeaders },
+      body: JSON.stringify({ accept: true, oauth_query: raw }),
+    });
+    const body = await accepted.text();
+    expect(accepted.status, body).toBe(200);
+    expect(body).toContain(redirectUri);
+  });
+});

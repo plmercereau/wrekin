@@ -17,3 +17,13 @@ export const errorMessage = (error: unknown): string => {
   }
   return error instanceof Error ? error.message : String(error);
 };
+
+/**
+ * The provider's signed query as it stands in the page URL, for `oauth_query`. Read from
+ * `window.location.search`, never from the router's parsed search: TanStack Router turns a
+ * repeated parameter (the provider's `ba_param`) into a JSON array, and the signature no
+ * longer matches.
+ */
+export function signedOAuthQuery(): string {
+  return typeof window === "undefined" ? "" : window.location.search.replace(/^\?/, "");
+}
