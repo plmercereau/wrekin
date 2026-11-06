@@ -1,0 +1,155 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    name: Go (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    # Only this job comments on the pull request (the failure report below).
+    permissions:
+      contents: read
+      pull-requests: write
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Install tmux
+        # `brew install` of a formula the image already has exits non-zero, and
+        # the apt step can fail on a transient mirror: install only when the
+        # binary is missing, and keep the output for the failure report below.
+        shell: bash
+        run: |
+          set -o pipefail
+          {
+            if command -v tmux >/dev/null 2>&1; then
+              echo "tmux already installed"
+            elif [ "$RUNNER_OS" = Linux ]; then
+              sudo apt-get update -qq && sudo apt-get install -y -qq tmux
+            else
+              brew install tmux
+            fi
+            tmux -V
+          } 2>&1 | tee ci-tmux.log
+      - name: gofmt
+        run: |
+          files="$(gofmt -l .)"
+          if [ -n "$files" ]; then
+            echo "These files are not gofmt-ed:"
+            echo "$files"
+            exit 1
+          fi
+      - name: go vet
+        run: go vet ./...
+      - name: go test
+        shell: bash
+        run: |
+          set -o pipefail
+          go test -race ./... 2>&1 | tee ci-go-test.log
+      - name: Report the failure on the pull request
+        # The job logs are not readable without repository admin rights; the
+        # tail of the failing output on the pull request is.
+        if: failure() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "**Go (${{ matrix.os }}) failed.** Last lines of the tmux install and of \`go test\`:"
+            echo
+            echo '```'
+            tail -n 20 ci-tmux.log 2>/dev/null || echo "(no tmux log)"
+            echo '--- go test ---'
+            tail -n 120 ci-go-test.log 2>/dev/null || echo "(no go test log: an earlier step failed)"
+            echo '```'
+          } > ci-comment.md
+          gh pr comment ${{ github.event.pull_request.number }} --body-file ci-comment.md
+
+  cloud:
+    name: Cloud (Worker)
+    runs-on: ubuntu-latest
+    # Only this job and the Go job comment on the pull request (failure reports).
+    permissions:
+      contents: read
+      pull-requests: write
+    defaults:
+      run:
+        working-directory: cloud
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - name: bun run test
+        shell: bash
+        run: |
+          set -o pipefail
+          bun run test 2>&1 | tee ci-cloud-test.log
+      - name: Report the failure on the pull request
+        # The job logs are not readable without repository admin rights; the
+        # tail of the failing output on the pull request is.
+        if: failure() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "**Cloud (Worker) failed.** Last lines of \`bun run test\`:"
+            echo
+            echo '```'
+            grep -v '^\s*$' ci-cloud-test.log 2>/dev/null | grep -E 'FAIL|✓|×|Error|error|expected|received|Test Files|Tests ' | tail -n 120 || echo "(no test log: an earlier step failed)"
+            echo '```'
+          } > ci-comment.md
+          gh pr comment ${{ github.event.pull_request.number }} --body-file ci-comment.md
+
+  goreleaser-check:
+    name: GoReleaser config
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - uses: goreleaser/goreleaser-action@v7
+        with:
+          version: "~> v2"
+          args: check
+
+  nix:
+    name: Nix
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: DeterminateSystems/nix-installer-action@v23
+      - uses: DeterminateSystems/magic-nix-cache-action@v15
+      - run: nix flake check
+      - run: nix build .#wrekin
+      - run: ./result/bin/wrekin --version
+
+  homebrew:
+    name: Homebrew formula renders
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # `sh` rather than the executable bit: the branch was published through the
+      # GitHub API, which keeps file contents but not modes.
+      - run: sh packaging/homebrew/render.sh 0.1.0 packaging/homebrew/testdata/checksums.txt > wrekin.rb
+      - run: ruby -c wrekin.rb
+      - name: Every placeholder is substituted
+        run: "! grep -n '@' wrekin.rb"

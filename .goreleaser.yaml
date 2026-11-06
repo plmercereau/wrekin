@@ -1,0 +1,91 @@
+# GoReleaser configuration (v2 schema).
+# Validate with `goreleaser check`; CI runs it on every pull request.
+version: 2
+
+project_name: wrekin
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: wrekin
+    main: ./cmd/wrekin
+    binary: wrekin
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    flags:
+      - -trimpath
+
+archives:
+  - id: default
+    formats:
+      - tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - README.md
+      - LICENSE
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+changelog:
+  sort: asc
+  use: git
+  filters:
+    exclude:
+      - "^test:"
+      - "^chore:"
+      - "^ci:"
+      - "^style:"
+      - "merge conflict"
+      - "^Merge "
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: Bug fixes
+      regexp: '^.*?fix(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: Build and packaging
+      regexp: '^.*?build(\([[:word:]]+\))??!?:.+$'
+      order: 2
+    - title: Documentation
+      regexp: '^.*?docs(\([[:word:]]+\))??!?:.+$'
+      order: 3
+    - title: Other
+      order: 999
+
+release:
+  github:
+    owner: plmercereau
+    name: wrekin
+  draft: false
+  prerelease: auto
+  footer: |
+    ## Install
+
+    - Homebrew: `brew install plmercereau/tap/wrekin`
+    - Nix: `nix run github:plmercereau/wrekin/{{ .Tag }}`
+    - Or download the archive for your platform above, check it against
+      `checksums.txt` and put `wrekin` on your PATH.
+
+    The daemon runs `git`, `tmux` and Claude Code (`claude`), which must be
+    installed on the machine: the Homebrew formula brings tmux, the Nix
+    package git and tmux; Claude Code comes from its native installer, the
+    `claude-code` Homebrew cask or nixpkgs. The README has the details.
+
+# The Homebrew formula is not GoReleaser's: its `brews` section is deprecated
+# in favour of casks, and a cask cannot carry the `service` block that
+# `brew services` needs. packaging/homebrew/render.sh writes the formula from
+# checksums.txt and release.yml pushes it to the tap.

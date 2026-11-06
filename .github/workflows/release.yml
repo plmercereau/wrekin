@@ -1,0 +1,76 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  goreleaser:
+    name: GoReleaser
+    runs-on: ubuntu-latest
+    permissions:
+      # Creates the GitHub release and uploads the archives.
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # The changelog is the commit log since the previous tag.
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: goreleaser/goreleaser-action@v7
+        with:
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  homebrew:
+    name: Homebrew formula
+    needs: goreleaser
+    # Pre-releases (v0.2.0-rc1) are published on GitHub but not to the tap;
+    # GoReleaser marks them as pre-releases for the same reason (prerelease: auto).
+    if: ${{ !contains(github.ref_name, '-') }}
+    runs-on: ubuntu-latest
+    permissions:
+      # Reads the release's checksums.txt; the tap is pushed with the PAT below.
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
+        with:
+          repository: plmercereau/homebrew-tap
+          # A fine-grained PAT with Contents: read and write on the tap only;
+          # GITHUB_TOKEN cannot push to another repository.
+          token: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+          path: tap
+      - name: Download the release checksums
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # GITHUB_REF_NAME is set by the runner (v0.1.0): the tag is read from
+        # the environment, never interpolated into the script.
+        run: gh release download "$GITHUB_REF_NAME" --pattern checksums.txt --dir dist
+      - name: Render the formula
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          mkdir -p tap/Formula
+          sh packaging/homebrew/render.sh "$version" dist/checksums.txt > tap/Formula/wrekin.rb
+          ruby -c tap/Formula/wrekin.rb
+          if grep -n '@' tap/Formula/wrekin.rb; then
+            echo "a placeholder was left in the formula"
+            exit 1
+          fi
+      - name: Push it to the tap
+        working-directory: tap
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/wrekin.rb
+          git commit -m "wrekin ${GITHUB_REF_NAME}" || { echo "formula unchanged"; exit 0; }
+          git push
