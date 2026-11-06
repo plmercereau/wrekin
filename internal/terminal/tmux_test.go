@@ -71,10 +71,20 @@ func TestTmuxLaunchExistsCaptureKill(t *testing.T) {
 	t.Cleanup(func() { _ = tm.Kill(session) })
 
 	waitFor(t, "session to exist", func() bool { ok, _ := tm.Exists(session); return ok })
-	waitFor(t, "READY in the pane", func() bool {
-		out, err := tm.Capture(session, 40)
-		return err == nil && strings.Contains(out, "READY")
-	})
+	var lastOut string
+	var lastErr error
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		lastOut, lastErr = tm.Capture(session, 40)
+		if lastErr == nil && strings.Contains(lastOut, "READY") {
+			break
+		}
+		if time.Now().After(deadline) {
+			info, _, infoErr := tm.run(nil, "display-message", "-p", "-t", target(session), "#{pane_dead} #{pane_current_command} #{pane_width}x#{pane_height}")
+			t.Fatalf("READY never showed in the pane.\ncapture error: %v\ncapture output: %q\npane: %q (%v)", lastErr, lastOut, info, infoErr)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 	running, err := tm.Running(session)
 	if err != nil {
 		t.Fatalf("Running: %v", err)
