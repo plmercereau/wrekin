@@ -165,6 +165,10 @@ func TestCloneLocalPath(t *testing.T) {
 	git(t, base, "clone", "-q", "--bare", src, bare)
 
 	dest := filepath.Join(base, "clone")
+	if err := r.Clone(context.Background(), "file://"+bare, dest); err == nil {
+		t.Fatal("Clone from file:// must be refused unless AllowLocal is set")
+	}
+	r.AllowLocal = true
 	if err := r.Clone(context.Background(), "file://"+bare, dest); err != nil {
 		t.Fatalf("Clone: %v", err)
 	}

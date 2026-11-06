@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/plmercereau/wrekin/internal/gitx"
 	"github.com/plmercereau/wrekin/internal/harness"
 	"github.com/plmercereau/wrekin/internal/protocol"
 	"github.com/plmercereau/wrekin/internal/workspace"
@@ -204,8 +205,10 @@ func newEnv(t *testing.T, tweak func(*RunnerDeps)) *env {
 	}
 	e := &env{t: t, root: canon, store: store, term: newFakeTerminal(), harn: newFakeHarness(), policy: policy}
 	e.deps = RunnerDeps{
-		Store:         store,
-		Policy:        policy,
+		Store:  store,
+		Policy: policy,
+		// The tests clone from local bare repositories; production refuses file://.
+		Git:           gitx.Runner{AllowLocal: true},
 		Term:          e.term,
 		Harness:       e.harn,
 		MaxConcurrent: 4,

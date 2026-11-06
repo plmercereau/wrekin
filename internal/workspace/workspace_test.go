@@ -137,7 +137,6 @@ func TestParseRepositoryForms(t *testing.T) {
 		{"https://github.com/plmercereau/wrekin.git", "https://github.com/plmercereau/wrekin.git", "wrekin"},
 		{"git@github.com:plmercereau/wrekin.git", "git@github.com:plmercereau/wrekin.git", "wrekin"},
 		{"ssh://git@github.com/plmercereau/wrekin.git", "ssh://git@github.com/plmercereau/wrekin.git", "wrekin"},
-		{"file:///srv/git/wrekin.git", "file:///srv/git/wrekin.git", "wrekin"},
 	}
 	for _, c := range cases {
 		ref, err := ParseRepository(c.in)
@@ -153,6 +152,23 @@ func TestParseRepositoryForms(t *testing.T) {
 		if _, err := ParseRepository(bad); err == nil {
 			t.Errorf("%q: expected an error", bad)
 		}
+	}
+}
+
+// Only https and ssh reach git from a relay request: file:// would copy any
+// local repository into an allowed root, http:// and git:// are plain text.
+func TestParseRepositoryRefusesLocalAndPlainTextSchemes(t *testing.T) {
+	for _, bad := range []string{"file:///srv/git/x.git", "file:///home/alice/.password-store", "http://github.com/a/b.git", "git://github.com/a/b.git", "ext::sh -c id"} {
+		if _, err := ParseRepository(bad); err == nil {
+			t.Errorf("%q: expected an error", bad)
+		}
+	}
+	ref, err := ParseRepositoryWith("file:///srv/git/x.git", ParseOptions{AllowLocal: true})
+	if err != nil || ref.Name != "x" {
+		t.Errorf("file:// with AllowLocal: %+v %v", ref, err)
+	}
+	if _, err := ParseRepositoryWith("http://github.com/a/b.git", ParseOptions{AllowLocal: true}); err == nil {
+		t.Error("AllowLocal must not admit http://")
 	}
 }
 

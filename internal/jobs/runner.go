@@ -61,7 +61,10 @@ const (
 	reasonTrust         = "trust"
 )
 
-var cloudSessionIDRe = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,200}$`)
+// cloudSessionIDRe is the shape of a Claude Code Cloud session id (the MCP
+// side checks the same prefix). The fixed prefix is what keeps a relay-chosen
+// id from being read as a flag by the harness or as an option by tmux/git.
+var cloudSessionIDRe = regexp.MustCompile(`^session_[A-Za-z0-9]{1,190}$`)
 
 // NewRunner builds a runner; call Close to stop background work.
 func NewRunner(deps RunnerDeps) *Runner {
@@ -321,7 +324,7 @@ func (r *Runner) prepare(jobID string) {
 			return
 		}
 		if p.Repository != "" {
-			if ref, err := workspace.ParseRepository(p.Repository); err == nil {
+			if ref, err := workspace.ParseRepositoryWith(p.Repository, r.parseOptions()); err == nil {
 				job.Repository = &protocol.Repository{Input: ref.Input, URL: ref.URL, Name: ref.Name}
 			}
 		}
@@ -330,10 +333,17 @@ func (r *Runner) prepare(jobID string) {
 			if err != nil {
 				top = resolved
 			}
+			// The directory passed the policy; its repository's top level may
+			// not (an allowed root inside a larger work tree, the home directory
+			// kept as a repository). Nothing outside the roots is used.
+			if _, err := r.deps.Policy.Resolve(top); err != nil {
+				r.fail(job, protocol.CodePathEscapesRoot, "the repository containing the directory lies outside the allowed directories", err)
+				return
+			}
 			job.CheckoutDir = top
 			if job.Repository == nil {
 				if remotes, err := r.deps.Git.Remotes(top); err == nil && remotes["origin"] != "" {
-					if ref, err := workspace.ParseRepository(remotes["origin"]); err == nil {
+					if ref, err := workspace.ParseRepositoryWith(remotes["origin"], workspace.ParseOptions{AllowLocal: true}); err == nil {
 						job.Repository = &protocol.Repository{Input: ref.Input, URL: ref.URL, Name: ref.Name}
 					}
 				}
@@ -345,7 +355,7 @@ func (r *Runner) prepare(jobID string) {
 		return
 	}
 
-	ref, err := workspace.ParseRepository(p.Repository)
+	ref, err := workspace.ParseRepositoryWith(p.Repository, r.parseOptions())
 	if err != nil {
 		r.fail(job, protocol.CodeInvalidParams, "the repository reference is not understood", err)
 		return
@@ -408,6 +418,21 @@ func (r *Runner) resume(jobID string) {
 func (r *Runner) isolate(job *Job) {
 	if job.CheckoutDir != "" {
 		wt := filepath.Join(job.CheckoutDir, ".claude", "worktrees", SessionName(job.CloudSessionID))
+		// A repository may ship `.claude` or `.claude/worktrees` as a symbolic
+		// link; os.MkdirAll and `git worktree add` would follow it out of the
+		// root. Refuse the link, then check the canonical path before anything
+		// is created there.
+		for _, dir := range []string{filepath.Join(job.CheckoutDir, ".claude"), filepath.Join(job.CheckoutDir, ".claude", "worktrees")} {
+			if info, err := os.Lstat(dir); err == nil && info.Mode()&os.ModeSymlink != 0 {
+				r.fail(job, protocol.CodePathEscapesRoot, "the repository's .claude directory is a symbolic link; refusing to create the worktree there", nil)
+				return
+			}
+		}
+		canon, err := r.deps.Policy.Resolve(wt)
+		if err != nil {
+			r.fail(job, protocol.CodePathEscapesRoot, "the worktree path resolves outside the allowed directories", err)
+			return
+		}
 		if _, err := os.Stat(wt); err == nil && r.deps.Git.IsRepo(wt) {
 			r.deps.Logger.Info("reusing worktree", "job", job.ID, "path", wt)
 		} else {
@@ -420,9 +445,14 @@ func (r *Runner) isolate(job *Job) {
 		if err := r.deps.Git.EnsureExcluded(job.CheckoutDir, worktreeExclude); err != nil {
 			r.deps.Logger.Warn("exclude not written", "job", job.ID, "err", err)
 		}
-		job.Workdir = wt
+		job.Workdir = canon
 	}
 	r.trustAndLaunch(job)
+}
+
+// parseOptions mirrors the git runner's transport allowance.
+func (r *Runner) parseOptions() workspace.ParseOptions {
+	return workspace.ParseOptions{AllowLocal: r.deps.Git.AllowLocal}
 }
 
 // trustAndLaunch is step 5: make sure the harness trusts the workdir, or ask.
@@ -474,7 +504,12 @@ func (r *Runner) launch(job *Job) {
 	job.Session = &protocol.Session{Terminal: r.deps.Term.Name(), Name: session, Attach: "wrekin attach " + session}
 	r.save(job, protocol.StateLaunching)
 
-	if err := r.deps.Term.Launch(r.ctx, session, job.Workdir, r.deps.Harness.LaunchArgs(job.CloudSessionID)); err != nil {
+	argv := r.deps.Harness.LaunchArgs(job.CloudSessionID)
+	if len(argv) == 0 {
+		r.fail(job, protocol.CodeInvalidParams, "the harness refused the session id", nil)
+		return
+	}
+	if err := r.deps.Term.Launch(r.ctx, session, job.Workdir, argv); err != nil {
 		r.fail(job, protocol.CodeInternal, "the terminal session could not be started; see the node log", err)
 		return
 	}

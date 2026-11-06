@@ -189,9 +189,23 @@ var (
 	scpLikeRe   = regexp.MustCompile(`^(?:[A-Za-z0-9_.-]+@)?([A-Za-z0-9_.-]+):([^/:][^:]*)$`)
 )
 
-// ParseRepository accepts "owner/name" (GitHub), an http(s) URL, an scp-like
-// "git@host:owner/name.git", an ssh:// URL or a file:// URL.
+// ParseOptions widens ParseRepository for callers that own the risk.
+type ParseOptions struct {
+	// AllowLocal accepts file:// URLs. Off by default: a relay-chosen file://
+	// URL would let the mediator copy any repository on this machine into an
+	// allowed root. Tests and the reading of a checkout's own remotes turn it on.
+	AllowLocal bool
+}
+
+// ParseRepository accepts "owner/name" (GitHub), an https:// URL, an scp-like
+// "git@host:owner/name.git" or an ssh:// URL. Plain-text (http, git) and
+// local (file) transports are refused; see ParseOptions.
 func ParseRepository(input string) (RepoRef, error) {
+	return ParseRepositoryWith(input, ParseOptions{})
+}
+
+// ParseRepositoryWith is ParseRepository with options.
+func ParseRepositoryWith(input string, opts ParseOptions) (RepoRef, error) {
 	in := strings.TrimSpace(input)
 	if in == "" {
 		return RepoRef{}, errors.New("empty repository reference")
@@ -206,9 +220,13 @@ func ParseRepository(input string) (RepoRef, error) {
 			return RepoRef{}, fmt.Errorf("invalid repository URL: %w", err)
 		}
 		switch u.Scheme {
-		case "https", "http", "ssh", "git", "file":
+		case "https", "ssh":
+		case "file":
+			if !opts.AllowLocal {
+				return RepoRef{}, errors.New("local (file://) repositories are not accepted from the relay")
+			}
 		default:
-			return RepoRef{}, fmt.Errorf("unsupported repository URL scheme %q", u.Scheme)
+			return RepoRef{}, fmt.Errorf("unsupported repository URL scheme %q (https or ssh only)", u.Scheme)
 		}
 		name := repoNameFromPath(u.Path)
 		if name == "" {

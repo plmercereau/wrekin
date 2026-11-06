@@ -32,6 +32,20 @@ const commandTimeout = 60 * time.Second
 // Runner executes git. The zero value uses the "git" found in PATH.
 type Runner struct {
 	Binary string
+	// AllowLocal lets Clone use file:// sources. Off by default (see
+	// workspace.ParseOptions); tests clone from local bare repositories.
+	AllowLocal bool
+}
+
+// cloneProtocolArgs makes git refuse every transport but https and ssh (and
+// file when allowed), whatever the URL parser let through: belt and braces
+// against ext::, git://, http:// and friends.
+func (r Runner) cloneProtocolArgs() []string {
+	args := []string{"-c", "protocol.allow=never", "-c", "protocol.https.allow=always", "-c", "protocol.ssh.allow=always"}
+	if r.AllowLocal {
+		args = append(args, "-c", "protocol.file.allow=always")
+	}
+	return args
 }
 
 func (r Runner) binary() string {
@@ -223,7 +237,8 @@ func (r Runner) Clone(ctx context.Context, url, dest string) error {
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 		return err
 	}
-	_, err := r.run(ctx, filepath.Dir(dest), "clone", "--", url, dest)
+	args := append(r.cloneProtocolArgs(), "clone", "--", url, dest)
+	_, err := r.run(ctx, filepath.Dir(dest), args...)
 	if err == nil {
 		return nil
 	}

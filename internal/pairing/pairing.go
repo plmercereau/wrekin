@@ -153,7 +153,8 @@ func (p *Pairer) Pair(ctx context.Context, name string, id *identity.Identity) (
 	}
 
 	var reg registerResponse
-	body := map[string]any{"name": name, "publicKey": id.PublicKeyBase64(), "agentVersion": p.AgentVersion, "platform": p.Platform}
+	// The Worker stores the platform as one string; the hostname stays local.
+	body := map[string]any{"name": name, "publicKey": id.PublicKeyBase64(), "agentVersion": p.AgentVersion, "platform": p.Platform.OS + "/" + p.Platform.Arch}
 	if err := p.postJSON(ctx, "/api/nodes", token.AccessToken, body, &reg); err != nil {
 		return "", "", fmt.Errorf("register node: %w", err)
 	}

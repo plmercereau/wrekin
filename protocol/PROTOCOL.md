@@ -116,8 +116,8 @@ Params:
 | Field | Type | Notes |
 |---|---|---|
 | `harness` | string | `"claude-code"` is the only MVP value |
-| `cloudSessionId` | string | the Claude Code Cloud session id, e.g. `session_01CN…` |
-| `repository` | string, optional | a Git URL or `owner/name` (GitHub); used to find or clone the checkout |
+| `cloudSessionId` | string | the Claude Code Cloud session id, e.g. `session_01CN…`; must match `^session_[A-Za-z0-9]+$` (the node refuses anything else, so no flag-shaped value ever reaches the harness) |
+| `repository` | string, optional | an `https://` or `ssh://`/scp-like Git URL, or `owner/name` (GitHub); used to find or clone the checkout. `file://`, `http://` and `git://` are refused with `invalid_params` |
 | `directory` | string, optional | a path hint under an allowed root; `~` is expanded |
 | `relaunch` | boolean, optional | required to launch again when the previous session is gone |
 

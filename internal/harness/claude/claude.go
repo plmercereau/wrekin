@@ -81,10 +81,19 @@ func parseVersion(out string) string {
 	return versionRe.FindString(strings.TrimSpace(out))
 }
 
+// cloudSessionIDRe is the shape of a Claude Code Cloud session id. The
+// `--teleport` option takes an optional value, so a token starting with "-"
+// would be read as another flag (`--dangerously-skip-permissions` among
+// them): only ids of this shape are ever placed after it.
+var cloudSessionIDRe = regexp.MustCompile(`^session_[A-Za-z0-9]{1,190}$`)
+
 // LaunchArgs implements harness.Harness. The binary is the absolute path
 // found by Detect when available, so launches do not depend on the PATH of
-// the terminal's shell.
+// the terminal's shell. It returns nil for an id that is not a session id.
 func (c *Claude) LaunchArgs(cloudSessionID string) []string {
+	if !cloudSessionIDRe.MatchString(cloudSessionID) {
+		return nil
+	}
 	c.mu.Lock()
 	bin := c.resolved
 	c.mu.Unlock()

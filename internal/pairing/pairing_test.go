@@ -132,9 +132,8 @@ func TestPairingFlowAgainstFakeServer(t *testing.T) {
 	if srv.registered["name"] != "box" || srv.registered["publicKey"] != id.PublicKeyBase64() || srv.registered["agentVersion"] != "0.1.0" {
 		t.Errorf("register body = %v", srv.registered)
 	}
-	platform, _ := srv.registered["platform"].(map[string]any)
-	if platform["os"] == "" || platform["arch"] == "" || platform["hostname"] == "" {
-		t.Errorf("register platform = %v", platform)
+	if platform, _ := srv.registered["platform"].(string); !strings.Contains(platform, "/") || strings.HasPrefix(platform, "/") {
+		t.Errorf("register platform = %v, want os/arch", srv.registered["platform"])
 	}
 	if srv.signedOut != "Bearer tok_abc" {
 		t.Errorf("sign-out Authorization = %q", srv.signedOut)

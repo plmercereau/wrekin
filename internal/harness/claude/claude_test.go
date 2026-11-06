@@ -13,6 +13,11 @@ func TestLaunchArgs(t *testing.T) {
 	if strings.Join(got, " ") != strings.Join(want, " ") {
 		t.Errorf("LaunchArgs = %v, want %v", got, want)
 	}
+	for _, bad := range []string{"--dangerously-skip-permissions", "-r", "", "session_01 CN", "abc", "session_x;rm"} {
+		if got := c.LaunchArgs(bad); got != nil {
+			t.Errorf("LaunchArgs(%q) = %v, want nil: a flag-shaped id must never reach the harness", bad, got)
+		}
+	}
 	if c.ID() != ID || ID != "claude-code" {
 		t.Errorf("ID = %q", c.ID())
 	}
@@ -69,7 +74,7 @@ func TestDetectParsesVersion(t *testing.T) {
 	if !info.Available || info.Version != "2.1.318" {
 		t.Errorf("info = %+v", info)
 	}
-	if got := c.LaunchArgs("s")[0]; got != fake {
+	if got := c.LaunchArgs("session_s")[0]; got != fake {
 		t.Errorf("LaunchArgs binary = %q, want the resolved %q", got, fake)
 	}
 }

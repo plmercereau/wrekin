@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/plmercereau/wrekin/internal/gitx"
 	"github.com/plmercereau/wrekin/internal/protocol"
 )
 
@@ -32,6 +33,13 @@ func TestTeleportRequiresRepositoryOrDirectory(t *testing.T) {
 	_, jerr = e.runner.Teleport(context.Background(), protocol.TeleportParams{Harness: "claude-code", CloudSessionID: "bad id; rm -rf", Repository: "o/r"})
 	if jerr == nil || jerr.Code != protocol.CodeInvalidParams {
 		t.Fatalf("hostile session id: err = %v, want invalid_params", jerr)
+	}
+	// A flag-shaped id would be read by the harness as another option.
+	for _, flag := range []string{"--dangerously-skip-permissions", "-r", "--continue", "abcdef0123"} {
+		_, jerr = e.runner.Teleport(context.Background(), protocol.TeleportParams{Harness: "claude-code", CloudSessionID: flag, Repository: "o/r"})
+		if jerr == nil || jerr.Code != protocol.CodeInvalidParams {
+			t.Fatalf("session id %q: err = %v, want invalid_params", flag, jerr)
+		}
 	}
 	if len(e.store.List()) != 0 {
 		t.Error("no job must be created for invalid requests")
@@ -474,5 +482,77 @@ func TestRecoverMarksInterruptedJobsFailed(t *testing.T) {
 	list, _ := e.runner.List()
 	if len(list) != 5 {
 		t.Errorf("List returned %d jobs", len(list))
+	}
+}
+
+// An allowed root inside a larger work tree (the home directory kept as a
+// repository): the directory passes the policy, the repository's top level
+// does not, and nothing outside the root may be used or trusted.
+func TestCheckoutTopLevelOutsideRootsIsRefused(t *testing.T) {
+	requireGit(t)
+	e := newEnv(t, nil)
+	// e.root sits inside a fresh repository rooted one level above it.
+	parent := filepath.Dir(e.root)
+	initRepo(t, parent, "git@github.com:someone/home.git")
+	sub := filepath.Join(e.root, "notes")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	job, jerr := e.runner.Teleport(context.Background(), protocol.TeleportParams{Harness: "claude-code", CloudSessionID: sessionID(7), Directory: sub})
+	if jerr != nil {
+		t.Fatalf("Teleport: %v", jerr)
+	}
+	job = e.waitState(job.ID, protocol.StateFailed)
+	if job.Error == nil || job.Error.Code != protocol.CodePathEscapesRoot {
+		t.Fatalf("error = %+v, want path_escapes_root", job.Error)
+	}
+	if e.term.launchCount() != 0 {
+		t.Error("nothing must be launched")
+	}
+	if len(e.harn.trusted) != 0 {
+		t.Errorf("nothing must be trusted, got %v", e.harn.trusted)
+	}
+}
+
+// A repository shipping `.claude` as a symbolic link to somewhere else must
+// not get its worktree created there.
+func TestWorktreeThroughSymlinkedClaudeDirIsRefused(t *testing.T) {
+	requireGit(t)
+	e := newEnv(t, nil)
+	checkout := filepath.Join(e.root, "wrekin")
+	initRepo(t, checkout, "git@github.com:plmercereau/wrekin.git")
+	e.harn.setTrusted(checkout, true)
+	outside := t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(checkout, ".claude")); err != nil {
+		t.Fatal(err)
+	}
+	job, jerr := e.runner.Teleport(context.Background(), teleportParams(8, "plmercereau/wrekin"))
+	if jerr != nil {
+		t.Fatalf("Teleport: %v", jerr)
+	}
+	job = e.waitState(job.ID, protocol.StateFailed)
+	if job.Error == nil || job.Error.Code != protocol.CodePathEscapesRoot {
+		t.Fatalf("error = %+v, want path_escapes_root", job.Error)
+	}
+	if entries, _ := os.ReadDir(outside); len(entries) != 0 {
+		t.Errorf("the outside directory must stay empty, got %v", entries)
+	}
+	if e.term.launchCount() != 0 {
+		t.Error("nothing must be launched")
+	}
+}
+
+// file:// repositories are refused unless the git runner allows them.
+func TestTeleportRefusesLocalRepositoryByDefault(t *testing.T) {
+	requireGit(t)
+	e := newEnv(t, func(d *RunnerDeps) { d.Git = gitx.Runner{} })
+	bare := bareRepo(t)
+	job, jerr := e.runner.Teleport(context.Background(), protocol.TeleportParams{Harness: "claude-code", CloudSessionID: sessionID(9), Repository: "file://" + bare})
+	if jerr != nil {
+		t.Fatalf("Teleport: %v", jerr)
+	}
+	job = e.waitState(job.ID, protocol.StateFailed)
+	if job.Error == nil || job.Error.Code != protocol.CodeInvalidParams {
+		t.Fatalf("error = %+v, want invalid_params", job.Error)
 	}
 }
