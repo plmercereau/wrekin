@@ -77,6 +77,11 @@ export function buildAuth(config: AuthConfig) {
         resource: `${config.baseURL}/mcp`,
         allowDynamicClientRegistration: true,
         allowUnauthenticatedClientRegistration: true,
+        // The provider's defaults plus "claudeai", the scope Claude's remote
+        // connector asks for when it registers and authorizes; refusing it
+        // fails the connector at registration. It grants nothing by itself:
+        // /mcp checks the token's audience, not its scopes.
+        scopes: ["openid", "profile", "email", "offline_access", "claudeai"],
         // Registration has no validation hook in 1.7.18, so a client may register any
         // redirect URI; the optional allowlist applies where it counts, when an
         // authorization is about to be sent to that URI (src/oauth-redirects.ts).
