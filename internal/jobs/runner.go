@@ -661,10 +661,22 @@ func (r *Runner) launch(job *Job) {
 			r.save(job, protocol.StateReady)
 			return
 		}
-		if pane, err := r.deps.Term.Capture(session, 40); err == nil && pattern.MatchString(pane) {
-			job.Ready = &protocol.Ready{Confirmed: true, Detail: "prompt visible"}
-			r.save(job, protocol.StateReady)
-			return
+		if pane, err := r.deps.Term.Capture(session, 40); err == nil {
+			// A setup screen first: its menus are drawn with the same "❯" as the prompt.
+			if what := r.deps.Harness.SetupScreen(pane); what != "" {
+				job.Ready = &protocol.Ready{
+					Confirmed: false,
+					Detail: fmt.Sprintf("the harness is waiting on %s, not in the session yet: attach with `%s` and finish it there; the teleported session opens right after",
+						what, job.Session.Attach),
+				}
+				r.save(job, protocol.StateReady)
+				return
+			}
+			if pattern.MatchString(pane) {
+				job.Ready = &protocol.Ready{Confirmed: true, Detail: "prompt visible"}
+				r.save(job, protocol.StateReady)
+				return
+			}
 		}
 		if time.Now().After(deadline) {
 			job.Ready = &protocol.Ready{

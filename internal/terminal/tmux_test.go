@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -158,5 +159,49 @@ func TestLookup(t *testing.T) {
 	}
 	if term.Name() != "tmux" {
 		t.Errorf("Name = %q", term.Name())
+	}
+}
+
+// The daemon (a service, no TMUX_TMPDIR) and the CLI (a login shell, often
+// with TMUX_TMPDIR) must reach the same server: Lookup names the socket.
+func TestLookupNamesTheSocketWhateverTMUXTMPDIR(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", "/state")
+	for _, tmpdir := range []string{"", "/run/user/1000"} {
+		t.Setenv("TMUX_TMPDIR", tmpdir)
+		term, err := Lookup("tmux")
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := term.AttachCommand("wrekin-abc")
+		want := []string{"tmux", "-S", "/state/wrekin/tmux.sock", "attach-session", "-t", "=wrekin-abc"}
+		if strings.Join(got, " ") != strings.Join(want, " ") {
+			t.Errorf("TMUX_TMPDIR=%q: attach = %q, want %q", tmpdir, got, want)
+		}
+	}
+}
+
+func TestLaunchCreatesTheSocketDirectory(t *testing.T) {
+	if _, err := exec.LookPath("tmux"); err != nil {
+		t.Skip("tmux binary not installed")
+	}
+	// A short base: a unix socket path is limited to about 100 bytes, which
+	// macOS's per-test temporary directories exceed.
+	base, err := os.MkdirTemp("/tmp", "wk")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(base) })
+	dir := filepath.Join(base, "state", "wrekin")
+	tm := &Tmux{Binary: "tmux", SocketPath: filepath.Join(dir, "t.sock")}
+	t.Cleanup(func() { _ = tm.killServer() })
+	err = tm.Launch(context.Background(), "wrekin-sock", os.TempDir(), []string{"sleep", "5"})
+	if err != nil && strings.Contains(err.Error(), "Operation not permitted") {
+		t.Skipf("tmux cannot create its server socket here (sandboxed?): %v", err)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info, err := os.Stat(dir); err != nil || info.Mode().Perm() != 0o700 {
+		t.Errorf("socket directory: %v %v", info, err)
 	}
 }

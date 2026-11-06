@@ -146,7 +146,7 @@ and `claude`.
 | `wrekin stop` | Stop the service |
 | `wrekin status` | Relay connection, node identity, job counts (`--json` available) |
 | `wrekin sessions` | List the teleport jobs and their tmux sessions |
-| `wrekin attach <session>` | Attach to a session's terminal (`tmux attach`) |
+| `wrekin attach <session>` | Attach to a session's terminal: `tmux -S ~/.local/state/wrekin/tmux.sock attach`, Wrekin's own tmux server, named by its socket so the daemon and your shell reach the same one whatever `TMUX_TMPDIR` says |
 | `wrekin logs` | Show the daemon log (`-f` to follow, `-n` for the line count) |
 | `wrekin cleanup` | Remove the tmux sessions, worktrees and clones Wrekin created (`--dry-run`, `--yes`); never a repository that existed before Wrekin |
 | `wrekin repos` | List the repository → checkout mappings, declared and learned, and whether each still holds (`--json` available) |

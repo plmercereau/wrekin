@@ -37,7 +37,8 @@ func TestReadyPatternMatchesPromptLines(t *testing.T) {
 		"╭──────╮\n│ > Try \"fix the bug\" │\n╰──────╯\n  ? for shortcuts",
 		"❯ ",
 		"some banner\n>",
-		"prompt line >   ",
+		"────────\n❯ \n────────",
+		"❯ téléporte cette session",
 	} {
 		if !re.MatchString(pane) {
 			t.Errorf("pattern should match prompt pane:\n%s", pane)
@@ -48,6 +49,12 @@ func TestReadyPatternMatchesPromptLines(t *testing.T) {
 		"Connecting to session...",
 		"error: --teleport requires a valid session id",
 		"a -> b arrow in the middle of a line",
+		"prompt line >   ",
+		// Claude Code 2.1.177's first-run screen, captured on a node: its menu
+		// marker was taken for the prompt and the job reported ready.
+		" Choose the text style that looks best with your terminal\n   1. Auto (match terminal)\n ❯ 2. Dark mode ✔\n   3. Light mode",
+		" ❯ 1. Yes, I trust this folder\n   2. No, exit",
+		"Paste code here if prompted >",
 	} {
 		if re.MatchString(pane) {
 			t.Errorf("pattern must not match:\n%s", pane)
@@ -106,5 +113,19 @@ func TestSignedInReadsAuthStatus(t *testing.T) {
 	}
 	if _, err := New("", filepath.Join(dir, "absent")).SignedIn(context.Background()); !errors.Is(err, exec.ErrNotFound) {
 		t.Errorf("a missing binary: err = %v, want exec.ErrNotFound", err)
+	}
+}
+
+func TestSetupScreenNamesWhatClaudeWaitsOn(t *testing.T) {
+	c := New("", "claude")
+	for pane, want := range map[string]string{
+		" Let's get started.\n Choose the text style that looks best with your terminal\n ❯ 2. Dark mode ✔": "its first-run setup (the theme choice)",
+		"Select login method:\n ❯ 1. Claude account with subscription":                                      "its sign-in",
+		"Do you trust the files in this folder?\n ❯ 1. Yes, proceed":                                        "the trust dialog for this folder",
+		"────────\n❯ \n────────\n  ? for shortcuts":                                                         "",
+	} {
+		if got := c.SetupScreen(pane); got != want {
+			t.Errorf("SetupScreen(%q) = %q, want %q", pane, got, want)
+		}
 	}
 }

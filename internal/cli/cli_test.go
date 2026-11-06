@@ -128,10 +128,19 @@ func TestAuthCreatesPrivateConfigDir(t *testing.T) {
 
 // fakeClaude answers SignedIn from its field and signs in on Login.
 type fakeClaude struct {
-	signedIn bool
-	err      error
-	logins   int
-	loginErr error
+	signedIn  bool
+	err       error
+	logins    int
+	loginErr  error
+	onboarded bool
+}
+
+func (f *fakeClaude) CompleteOnboarding() (bool, error) {
+	if f.onboarded {
+		return false, nil
+	}
+	f.onboarded = true
+	return true, nil
 }
 
 func (f *fakeClaude) SignedIn(context.Context) (bool, error) { return f.signedIn, f.err }
@@ -165,7 +174,7 @@ func runAuth(t *testing.T, fake *fakeClaude, interactive bool, extra ...string) 
 func TestAuthRunsClaudeLoginWhenSignedOutOnATerminal(t *testing.T) {
 	fake := &fakeClaude{}
 	out := runAuth(t, fake, true)
-	if fake.logins != 1 || !strings.Contains(out, "running `claude auth login`") || !strings.HasSuffix(strings.TrimSpace(out), "Claude Code is signed in on this machine.") {
+	if fake.logins != 1 || !strings.Contains(out, "running `claude auth login`") || !strings.Contains(out, "Claude Code is signed in on this machine.") || !fake.onboarded {
 		t.Errorf("logins = %d, output:\n%s", fake.logins, out)
 	}
 }
@@ -235,5 +244,17 @@ func TestInteractiveStdinIsFalseForDevNull(t *testing.T) {
 	}
 	if (&app{stdin: strings.NewReader("")}).interactiveStdin() {
 		t.Error("a reader taken for a terminal")
+	}
+}
+
+func TestAuthMarksClaudeOnboardedOnceSignedInOnly(t *testing.T) {
+	signedIn := &fakeClaude{signedIn: true}
+	if out := runAuth(t, signedIn, false); !signedIn.onboarded || !strings.Contains(out, "first-run setup as done") {
+		t.Errorf("onboarded = %v, output:\n%s", signedIn.onboarded, out)
+	}
+	signedOut := &fakeClaude{}
+	runAuth(t, signedOut, false)
+	if signedOut.onboarded {
+		t.Error("onboarding marked on a signed-out Claude Code")
 	}
 }

@@ -177,6 +177,8 @@ describe("MCP tools", () => {
     hub.answer(mine.id, "get_teleport_status", { ok: true, data: readyJob({ ready: { confirmed: false, detail: "prompt not seen within 60 s" } }) });
     const result = await call("get_teleport_status", { node: "workstation", jobId: "job_01J" });
     expect(textOf(result)).toContain("could not be verified");
+    // The teleport hands the work off: the cloud conversation must say it cannot act on the machine.
+    expect(textOf(result)).toContain("not in this conversation");
     expect(textOf(result)).toContain("wrekin attach wrekin-01CN");
   });
 

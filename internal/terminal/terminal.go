@@ -6,6 +6,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+
+	"github.com/plmercereau/wrekin/internal/paths"
 )
 
 // ErrUnavailable means the requested terminal is not installed or not
@@ -39,7 +41,8 @@ type Terminal interface {
 func Lookup(name string) (Terminal, error) {
 	switch name {
 	case "tmux":
-		return NewTmux(), nil
+		// The daemon and the CLI both come through here: one explicit socket.
+		return &Tmux{Binary: "tmux", SocketPath: paths.TmuxSocket()}, nil
 	default:
 		return nil, fmt.Errorf("%w: %q is not supported (only tmux)", ErrUnavailable, name)
 	}

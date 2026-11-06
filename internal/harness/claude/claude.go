@@ -160,12 +160,37 @@ func (c *Claude) LaunchArgs(cloudSessionID string) []string {
 	return []string{bin, "--teleport", cloudSessionID}
 }
 
-// readyPattern matches the Claude Code prompt: the shortcuts hint under the
-// input box, the "❯" prompt, or a line that ends with the ">" prompt.
-var readyPattern = regexp.MustCompile(`(?m)\? for shortcuts|❯|>\s*$`)
+// readyPattern matches the Claude Code input prompt: the shortcuts hint
+// under the input box, or a line that starts (inside the box's border, if
+// any) with "❯" or ">" followed by nothing or by text. A menu line such as
+// "❯ 2. Dark mode" (the first-run theme picker, the trust and login dialogs)
+// is not a prompt: the marker is followed by a number there. So is a ">" at
+// the end of a line ("Paste code here if prompted >").
+var readyPattern = regexp.MustCompile(`(?m)\? for shortcuts|^[ \t│]*[❯>](?:[ \t\x{a0}]*$|[ \t\x{a0}]+[^\d\s])`)
 
 // ReadyPattern implements harness.Harness.
 func (c *Claude) ReadyPattern() *regexp.Regexp { return readyPattern }
+
+// setupScreens are the interactive screens Claude Code shows before it opens
+// any session, and that no one answers on a node until the user attaches.
+var setupScreens = []struct {
+	re   *regexp.Regexp
+	what string
+}{
+	{regexp.MustCompile(`Choose the text style`), "its first-run setup (the theme choice)"},
+	{regexp.MustCompile(`Select login method|Paste code here if prompted`), "its sign-in"},
+	{regexp.MustCompile(`(?i)do you trust the files in this folder|is this a project you created or one you trust|trust this folder`), "the trust dialog for this folder"},
+}
+
+// SetupScreen implements harness.Harness.
+func (c *Claude) SetupScreen(pane string) string {
+	for _, s := range setupScreens {
+		if s.re.MatchString(pane) {
+			return s.what
+		}
+	}
+	return ""
+}
 
 // ExitedIsFailure implements harness.Harness.
 func (c *Claude) ExitedIsFailure() bool { return true }

@@ -5,7 +5,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -15,8 +17,12 @@ import (
 type Tmux struct {
 	// Binary is the tmux executable; "tmux" by default.
 	Binary string
-	// SocketName selects a separate tmux server (-L); empty means the
-	// user's default server, so `tmux attach` works as usual.
+	// SocketPath selects the tmux server by its socket path (-S); it wins
+	// over SocketName. Lookup sets it to paths.TmuxSocket().
+	SocketPath string
+	// SocketName selects a separate tmux server (-L) in tmux's socket
+	// directory, which depends on TMUX_TMPDIR (tests); empty with no
+	// SocketPath means tmux's default server.
 	SocketName string
 }
 
@@ -35,10 +41,14 @@ func (t *Tmux) Available() error {
 }
 
 func (t *Tmux) args(rest ...string) []string {
-	if t.SocketName == "" {
+	switch {
+	case t.SocketPath != "":
+		return append([]string{"-S", t.SocketPath}, rest...)
+	case t.SocketName != "":
+		return append([]string{"-L", t.SocketName}, rest...)
+	default:
 		return rest
 	}
-	return append([]string{"-L", t.SocketName}, rest...)
 }
 
 // run executes a tmux command and returns its stdout. tmux sometimes reports
@@ -82,6 +92,13 @@ func paneTarget(session string) string { return "=" + session + ":" }
 func (t *Tmux) Launch(ctx context.Context, session, workdir string, argv []string) error {
 	if len(argv) == 0 {
 		return errors.New("tmux: empty command")
+	}
+	if t.SocketPath != "" {
+		// The first launch starts the server, which creates the socket but
+		// not its directory.
+		if err := os.MkdirAll(filepath.Dir(t.SocketPath), 0o700); err != nil {
+			return fmt.Errorf("tmux socket directory: %w", err)
+		}
 	}
 	_, stderr, err := t.run(ctx, launchArgs(session, workdir, argv)...)
 	if err != nil {
