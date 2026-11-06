@@ -264,3 +264,52 @@ func TestAddWorktreeAndExclude(t *testing.T) {
 		t.Errorf("worktree branch after re-add = %q", got)
 	}
 }
+
+// A checkout that lags behind origin (fennec's clone sat on a release while
+// main moved on) must not seed the worktree: the new branch starts from
+// origin's default branch after a fetch.
+func TestAddWorktreeStartsFromAFreshOrigin(t *testing.T) {
+	r := requireGit(t)
+	r.AllowLocal = true
+	base := t.TempDir()
+	src := filepath.Join(base, "src")
+	initRepo(t, src, "")
+	bare := filepath.Join(base, "bare.git")
+	git(t, base, "clone", "-q", "--bare", src, bare)
+	checkout := filepath.Join(base, "checkout")
+	git(t, base, "clone", "-q", "file://"+bare, checkout)
+
+	// origin moves on; the checkout does not pull.
+	if err := os.WriteFile(filepath.Join(src, "NEW.md"), []byte("new\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git(t, src, "add", "NEW.md")
+	git(t, src, "commit", "-q", "-m", "second")
+	git(t, src, "push", "-q", bare, "main")
+	want := git(t, src, "rev-parse", "HEAD")
+
+	wt := filepath.Join(checkout, ".claude", "worktrees", "wrekin-fresh")
+	if err := r.AddWorktree(context.Background(), checkout, wt, "wrekin/fresh"); err != nil {
+		t.Fatalf("AddWorktree: %v", err)
+	}
+	if got := git(t, wt, "rev-parse", "HEAD"); got != want {
+		t.Errorf("worktree at %s, want origin's %s", got, want)
+	}
+	if up, err := exec.Command("git", "-C", wt, "rev-parse", "--abbrev-ref", "@{upstream}").Output(); err == nil {
+		t.Errorf("the session branch must not track origin's default branch, tracks %s", up)
+	}
+}
+
+// Without a reachable origin the worktree still starts, from HEAD.
+func TestAddWorktreeFallsBackToHEADWhenOriginIsUnreachable(t *testing.T) {
+	r := requireGit(t)
+	repo := filepath.Join(t.TempDir(), "repo")
+	initRepo(t, repo, "https://example.invalid/none.git")
+	wt := filepath.Join(repo, ".claude", "worktrees", "wrekin-offline")
+	if err := r.AddWorktree(context.Background(), repo, wt, "wrekin/offline"); err != nil {
+		t.Fatalf("AddWorktree: %v", err)
+	}
+	if got, want := git(t, wt, "rev-parse", "HEAD"), git(t, repo, "rev-parse", "HEAD"); got != want {
+		t.Errorf("worktree at %s, want HEAD %s", got, want)
+	}
+}

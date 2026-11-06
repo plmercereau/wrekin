@@ -8,17 +8,19 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/plmercereau/wrekin/internal/harness"
 )
 
 func TestLaunchArgs(t *testing.T) {
 	c := New(filepath.Join(t.TempDir(), ".claude.json"), "/opt/bin/claude")
-	got := c.LaunchArgs("session_01CN")
+	got := c.LaunchArgs("session_01CN", harness.LaunchOptions{})
 	want := []string{"/opt/bin/claude", "--teleport", "session_01CN"}
 	if strings.Join(got, " ") != strings.Join(want, " ") {
 		t.Errorf("LaunchArgs = %v, want %v", got, want)
 	}
 	for _, bad := range []string{"--dangerously-skip-permissions", "-r", "", "session_01 CN", "abc", "session_x;rm"} {
-		if got := c.LaunchArgs(bad); got != nil {
+		if got := c.LaunchArgs(bad, harness.LaunchOptions{}); got != nil {
 			t.Errorf("LaunchArgs(%q) = %v, want nil: a flag-shaped id must never reach the harness", bad, got)
 		}
 	}
@@ -85,7 +87,7 @@ func TestDetectParsesVersion(t *testing.T) {
 	if !info.Available || info.Version != "2.1.318" {
 		t.Errorf("info = %+v", info)
 	}
-	if got := c.LaunchArgs("session_s")[0]; got != fake {
+	if got := c.LaunchArgs("session_s", harness.LaunchOptions{})[0]; got != fake {
 		t.Errorf("LaunchArgs binary = %q, want the resolved %q", got, fake)
 	}
 }
@@ -127,5 +129,42 @@ func TestSetupScreenNamesWhatClaudeWaitsOn(t *testing.T) {
 		if got := c.SetupScreen(pane); got != want {
 			t.Errorf("SetupScreen(%q) = %q, want %q", pane, got, want)
 		}
+	}
+}
+
+func TestLaunchArgsWithRemoteControl(t *testing.T) {
+	c := New("", "/opt/bin/claude")
+	got := c.LaunchArgs("session_01CN", harness.LaunchOptions{RemoteControl: "fennec wrekin-ydncipcr"})
+	want := []string{"/opt/bin/claude", "--teleport", "session_01CN", "--remote-control", "fennec wrekin-ydncipcr"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("argv = %q, want %q", got, want)
+	}
+	// --remote-control takes an optional value: a name shaped like a flag would be read as one.
+	for _, bad := range []string{"--dangerously-skip-permissions", "-x", " lead", "a;b", ""} {
+		args := c.LaunchArgs("session_01CN", harness.LaunchOptions{RemoteControl: bad})
+		if bad == "" {
+			if len(args) != 3 {
+				t.Errorf("no name must mean no remote control: %q", args)
+			}
+			continue
+		}
+		if args != nil {
+			t.Errorf("name %q accepted: %q", bad, args)
+		}
+	}
+}
+
+func TestRemoteControlActiveReadsTheStatusLine(t *testing.T) {
+	c := New("", "claude")
+	// The bottom of a Claude Code 2.1.177 pane once /remote-control is on, captured on fennec.
+	pane := "────────\n❯ \n────────\n  ? for shortcuts · ← for agents      Now using usage credits\n                    ● high · /effort\n                          /rc active"
+	if !c.RemoteControlActive(pane) {
+		t.Error("/rc active not recognised")
+	}
+	if c.RemoteControlActive("────────\n❯ \n────────\n  ? for shortcuts") {
+		t.Error("a pane without it reported active")
+	}
+	if got := c.SetupScreen(" Remote Control\n   ❯ 1. Enable Remote Control  Opens a secure connection to claude.ai."); got != "the Remote Control consent" {
+		t.Errorf("consent screen = %q", got)
 	}
 }

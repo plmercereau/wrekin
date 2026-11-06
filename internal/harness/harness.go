@@ -20,6 +20,13 @@ type Info struct {
 	Version   string
 }
 
+// LaunchOptions tune a launch.
+type LaunchOptions struct {
+	// RemoteControl, when not empty, starts the session with remote control
+	// under this name (Claude Code's --remote-control).
+	RemoteControl string
+}
+
 // Harness is one adapter.
 type Harness interface {
 	// ID is the protocol harness id ("claude-code").
@@ -35,8 +42,11 @@ type Harness interface {
 	// Trust records dir as trusted, so the harness does not ask on launch.
 	Trust(dir string) error
 	// LaunchArgs is the argv that resumes the cloud session in the current
-	// directory.
-	LaunchArgs(cloudSessionID string) []string
+	// directory, nil when it refuses the id or the options.
+	LaunchArgs(cloudSessionID string, opts LaunchOptions) []string
+	// RemoteControlActive reports whether the pane shows the session under
+	// remote control.
+	RemoteControlActive(pane string) bool
 	// ReadyPattern matches the pane once the harness prompt is visible.
 	ReadyPattern() *regexp.Regexp
 	// SetupScreen names the interactive screen the pane shows when the

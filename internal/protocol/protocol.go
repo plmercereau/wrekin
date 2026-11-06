@@ -238,6 +238,9 @@ type Session struct {
 	Terminal string `json:"terminal"`
 	Name     string `json:"name"`
 	Attach   string `json:"attach"`
+	// RemoteControl is the name the session is listed under in
+	// claude.ai/code and the Claude app when it runs with Remote Control.
+	RemoteControl string `json:"remoteControl,omitempty"`
 }
 
 // AttentionApproveRepository is the only attention kind in the MVP.

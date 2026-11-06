@@ -175,8 +175,17 @@ func (f *fakeHarness) Trust(dir string) error {
 	f.trusts = append(f.trusts, dir)
 	return nil
 }
-func (f *fakeHarness) LaunchArgs(id string) []string { return []string{"claude", "--teleport", id} }
-func (f *fakeHarness) ReadyPattern() *regexp.Regexp  { return regexp.MustCompile(`READY`) }
+func (f *fakeHarness) LaunchArgs(id string, opts harness.LaunchOptions) []string {
+	if opts.RemoteControl != "" {
+		if strings.HasPrefix(opts.RemoteControl, "-") || strings.Contains(opts.RemoteControl, "!") {
+			return nil
+		}
+		return []string{"claude", "--teleport", id, "--remote-control", opts.RemoteControl}
+	}
+	return []string{"claude", "--teleport", id}
+}
+func (f *fakeHarness) RemoteControlActive(pane string) bool { return strings.Contains(pane, "RC-ON") }
+func (f *fakeHarness) ReadyPattern() *regexp.Regexp         { return regexp.MustCompile(`READY`) }
 func (f *fakeHarness) SetupScreen(pane string) string {
 	if strings.Contains(pane, "SETUP") {
 		return "its fake setup"

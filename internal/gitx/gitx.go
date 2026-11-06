@@ -268,8 +268,15 @@ func looksLikePrompt(stderr string) bool {
 	return false
 }
 
-// AddWorktree creates a worktree at path on branch, creating the branch from
-// HEAD when it does not exist yet.
+// FetchTimeout bounds the fetch that precedes a new worktree.
+const FetchTimeout = 2 * time.Minute
+
+// AddWorktree creates a worktree at path on branch. A new branch starts from
+// origin's default branch as it is now: the checkout may be weeks behind (a
+// clone Wrekin made once, a checkout the user does not pull), and a teleport
+// must not land on that. So origin is fetched first, without prompts, and
+// the branch starts from origin/HEAD; when the fetch fails (offline, no
+// credentials) or origin has no HEAD, from the checkout's HEAD, as before.
 func (r Runner) AddWorktree(ctx context.Context, repo, path, branch string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
@@ -278,8 +285,38 @@ func (r Runner) AddWorktree(ctx context.Context, repo, path, branch string) erro
 		_, err = r.run(ctx, repo, "worktree", "add", "--", path, branch)
 		return err
 	}
-	_, err := r.run(ctx, repo, "worktree", "add", "-b", branch, "--", path)
+	args := []string{"worktree", "add", "--no-track", "-b", branch, "--", path}
+	if base := r.freshBase(ctx, repo); base != "" {
+		args = append(args, base)
+	}
+	_, err := r.run(ctx, repo, args...)
 	return err
+}
+
+// freshBase fetches origin and returns the commit of its default branch, or
+// "" when there is none to trust.
+func (r Runner) freshBase(ctx context.Context, repo string) string {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	fctx, cancel := context.WithTimeout(ctx, FetchTimeout)
+	defer cancel()
+	fetch := append(r.cloneProtocolArgs(), "fetch", "--quiet", "--prune", "origin")
+	if _, err := r.run(fctx, repo, fetch...); err != nil {
+		return ""
+	}
+	// A clone has origin/HEAD; a checkout made with `git init` and
+	// `remote add` does not until it is asked for.
+	if _, err := r.run(ctx, repo, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/HEAD"); err != nil {
+		if _, err := r.run(fctx, repo, append(r.cloneProtocolArgs(), "remote", "set-head", "origin", "--auto")...); err != nil {
+			return ""
+		}
+	}
+	sha, err := r.run(ctx, repo, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/HEAD^{commit}")
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(sha)
 }
 
 // RemoveWorktree removes a worktree Wrekin created and prunes the metadata.

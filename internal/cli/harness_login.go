@@ -82,6 +82,6 @@ func completeOnboarding(a *app, h claudeSignIn) {
 	case err != nil:
 		fmt.Fprintf(a.stdout, "Could not mark Claude Code's first-run setup as done (%v); run `claude` once here and finish it before teleporting.\n", err)
 	case changed:
-		fmt.Fprintln(a.stdout, "Marked Claude Code's first-run setup as done, so a teleport opens the session rather than the theme picker (`/theme` changes it).")
+		fmt.Fprintln(a.stdout, "Marked Claude Code's first-run setup and its Remote Control consent as done, so a teleport opens the session, under Remote Control, rather than a dialog no one answers (`/theme` changes the theme).")
 	}
 }

@@ -228,7 +228,7 @@ func TestCompleteOnboardingSetsTheKeyOnceAndKeepsTheRest(t *testing.T) {
 	if err := json.Unmarshal(data, &got); err != nil {
 		t.Fatal(err)
 	}
-	if got["hasCompletedOnboarding"] != true || got["theme"] != "dark" || got["projects"] == nil {
+	if got["hasCompletedOnboarding"] != true || got["remoteDialogSeen"] != true || got["theme"] != "dark" || got["projects"] == nil {
 		t.Errorf("file = %v", got)
 	}
 	if backup, _ := os.ReadFile(path + ".wrekin-backup"); string(backup) != sampleClaudeJSON {

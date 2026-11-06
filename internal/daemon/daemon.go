@@ -96,6 +96,8 @@ func Run(ctx context.Context, o Options) error {
 		Term:          term,
 		Harness:       harn,
 		MaxConcurrent: settings.Teleport.MaxConcurrent,
+		RemoteControl: settings.Teleport.RemoteControl,
+		NodeName:      settings.Name,
 		Logger:        logger,
 	})
 	defer runner.Close()
@@ -220,6 +222,20 @@ func (d *daemon) handleControl(ctx context.Context, method string, params json.R
 			d.logger.Info("learned mapping forgotten", "repository", entry.Repository, "path", entry.Path)
 		}
 		return control.ReposForgetResult{Removed: removed, Repository: entry.Repository, Path: entry.Path}, nil
+	case control.MethodSessionsKill:
+		var p control.SessionsKillParams
+		if err := json.Unmarshal(params, &p); err != nil || strings.TrimSpace(p.Target) == "" {
+			return nil, fmt.Errorf("sessions.kill needs a job id or a session name")
+		}
+		job, err := d.runner.Kill(p.Target)
+		if err != nil {
+			return nil, err
+		}
+		if job == nil {
+			return control.SessionsKillResult{Session: strings.TrimSpace(p.Target)}, nil
+		}
+		wire := job.Wire()
+		return control.SessionsKillResult{Session: job.Session.Name, Job: &wire}, nil
 	case control.MethodShutdown:
 		d.logger.Info("shutdown requested through the control socket")
 		go func() {

@@ -144,11 +144,20 @@ func parseVersion(out string) string {
 // them): only ids of this shape are ever placed after it.
 var cloudSessionIDRe = regexp.MustCompile(`^session_[A-Za-z0-9]{1,190}$`)
 
+// remoteControlNameRe bounds the Remote Control name: like an id after
+// --teleport, it follows an option with an optional value and must never
+// look like a flag.
+var remoteControlNameRe = regexp.MustCompile(`^[\p{L}\p{N}][\p{L}\p{N} ._-]{0,79}$`)
+
 // LaunchArgs implements harness.Harness. The binary is the absolute path
 // found by Detect when available, so launches do not depend on the PATH of
-// the terminal's shell. It returns nil for an id that is not a session id.
-func (c *Claude) LaunchArgs(cloudSessionID string) []string {
+// the terminal's shell. It returns nil for an id that is not a session id or
+// a Remote Control name that could be read as a flag.
+func (c *Claude) LaunchArgs(cloudSessionID string, opts harness.LaunchOptions) []string {
 	if !cloudSessionIDRe.MatchString(cloudSessionID) {
+		return nil
+	}
+	if opts.RemoteControl != "" && !remoteControlNameRe.MatchString(opts.RemoteControl) {
 		return nil
 	}
 	c.mu.Lock()
@@ -157,8 +166,19 @@ func (c *Claude) LaunchArgs(cloudSessionID string) []string {
 	if bin == "" {
 		bin = c.binary
 	}
-	return []string{bin, "--teleport", cloudSessionID}
+	argv := []string{bin, "--teleport", cloudSessionID}
+	if opts.RemoteControl != "" {
+		argv = append(argv, "--remote-control", opts.RemoteControl)
+	}
+	return argv
 }
+
+// remoteControlActive is the status line of a session under Remote Control
+// (Claude Code 2.1.177: "/rc active" at the bottom right).
+var remoteControlActive = regexp.MustCompile(`/rc active|Remote Control active`)
+
+// RemoteControlActive implements harness.Harness.
+func (c *Claude) RemoteControlActive(pane string) bool { return remoteControlActive.MatchString(pane) }
 
 // readyPattern matches the Claude Code input prompt: the shortcuts hint
 // under the input box, or a line that starts (inside the box's border, if
@@ -180,6 +200,7 @@ var setupScreens = []struct {
 	{regexp.MustCompile(`Choose the text style`), "its first-run setup (the theme choice)"},
 	{regexp.MustCompile(`Select login method|Paste code here if prompted`), "its sign-in"},
 	{regexp.MustCompile(`(?i)do you trust the files in this folder|is this a project you created or one you trust|trust this folder`), "the trust dialog for this folder"},
+	{regexp.MustCompile(`Enable Remote Control`), "the Remote Control consent"},
 }
 
 // SetupScreen implements harness.Harness.

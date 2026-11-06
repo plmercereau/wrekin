@@ -620,3 +620,110 @@ func TestLaunchReportsASetupScreenInsteadOfReady(t *testing.T) {
 		t.Errorf("detail = %q", j.Ready.Detail)
 	}
 }
+
+// With Remote Control on, the session starts under it, named after the node
+// and the session, and is confirmed once the harness reports it active.
+func TestLaunchUnderRemoteControl(t *testing.T) {
+	requireGit(t)
+	e := newEnv(t, func(d *RunnerDeps) {
+		d.RemoteControl = true
+		d.NodeName = "fennec"
+		d.RemoteControlGrace = 300 * time.Millisecond
+	})
+	checkout := filepath.Join(e.root, "wrekin")
+	initRepo(t, checkout, "git@github.com:plmercereau/wrekin.git")
+	e.harn.setTrusted(checkout, true)
+
+	job, jerr := e.runner.Teleport(context.Background(), teleportParams(12, "plmercereau/wrekin"))
+	if jerr != nil {
+		t.Fatal(jerr)
+	}
+	launched := e.waitLaunched(1)
+	wantName := "fennec " + launched.session
+	if strings.Join(launched.argv, " ") != "claude --teleport "+sessionID(12)+" --remote-control "+wantName {
+		t.Errorf("argv %q", launched.argv)
+	}
+	e.term.setPane(launched.session, "READY\nRC-ON")
+	j := e.waitState(job.ID, protocol.StateReady)
+	if j.Ready == nil || !j.Ready.Confirmed || !strings.Contains(j.Ready.Detail, "Remote Control active") {
+		t.Errorf("ready = %+v", j.Ready)
+	}
+	if j.Session == nil || j.Session.RemoteControl != wantName {
+		t.Errorf("session = %+v", j.Session)
+	}
+}
+
+// A prompt without remote control after the grace is still ready, and says
+// how to turn it on.
+func TestLaunchSaysWhenRemoteControlDoesNotComeUp(t *testing.T) {
+	requireGit(t)
+	e := newEnv(t, func(d *RunnerDeps) {
+		d.RemoteControl = true
+		d.NodeName = "bad!name"
+		d.RemoteControlGrace = 200 * time.Millisecond
+	})
+	checkout := filepath.Join(e.root, "wrekin")
+	initRepo(t, checkout, "git@github.com:plmercereau/wrekin.git")
+	e.harn.setTrusted(checkout, true)
+	job, jerr := e.runner.Teleport(context.Background(), teleportParams(13, "plmercereau/wrekin"))
+	if jerr != nil {
+		t.Fatal(jerr)
+	}
+	launched := e.waitLaunched(1)
+	// A node name the harness refuses falls back to the session's own name.
+	if launched.argv[len(launched.argv)-1] != launched.session {
+		t.Errorf("argv %q", launched.argv)
+	}
+	e.term.setPane(launched.session, "READY")
+	j := e.waitState(job.ID, protocol.StateReady)
+	if j.Ready == nil || !strings.Contains(j.Ready.Detail, "/remote-control") {
+		t.Errorf("ready = %+v", j.Ready)
+	}
+}
+
+// `wrekin kill` ends a session by job id or by session name; its job ends
+// as session_gone, so teleporting again needs relaunch.
+func TestKillEndsTheSessionAndTheJob(t *testing.T) {
+	requireGit(t)
+	e := newEnv(t, nil)
+	checkout := filepath.Join(e.root, "wrekin")
+	initRepo(t, checkout, "git@github.com:plmercereau/wrekin.git")
+	e.harn.setTrusted(checkout, true)
+
+	for i, byJobID := range []bool{true, false} {
+		job, jerr := e.runner.Teleport(context.Background(), teleportParams(20+i, "plmercereau/wrekin"))
+		if jerr != nil {
+			t.Fatal(jerr)
+		}
+		launched := e.waitLaunched(i + 1)
+		e.term.setPane(launched.session, "READY")
+		e.waitState(job.ID, protocol.StateReady)
+
+		target := launched.session
+		if byJobID {
+			target = job.ID
+		}
+		killed, err := e.runner.Kill(target)
+		if err != nil {
+			t.Fatalf("Kill(%s): %v", target, err)
+		}
+		if killed == nil || killed.State != protocol.StateFailed || killed.Error == nil || killed.Error.Code != protocol.CodeSessionGone {
+			t.Errorf("Kill(%s) = %+v", target, killed)
+		}
+		if exists, _ := e.term.Exists(launched.session); exists {
+			t.Errorf("session %s still exists", launched.session)
+		}
+		if _, jerr := e.runner.Teleport(context.Background(), teleportParams(20+i, "plmercereau/wrekin")); jerr == nil || jerr.Code != protocol.CodeSessionGone {
+			t.Errorf("teleport again without relaunch = %v, want session_gone", jerr)
+		}
+	}
+}
+
+func TestKillRefusesWhatIsNotWrekins(t *testing.T) {
+	e := newEnv(t, nil)
+	for _, target := range []string{"main", "wrekin-absent", "job_unknown"} {
+		if _, err := e.runner.Kill(target); !errors.Is(err, ErrNothingToKill) {
+			t.Errorf("Kill(%q) = %v, want ErrNothingToKill", target, err)
+		}
+	}
+}

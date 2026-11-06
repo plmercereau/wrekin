@@ -154,9 +154,9 @@ Params: `{}`. Result: `{ "at": "<RFC 3339>" }`. For diagnostics only.
   "state": "ready",
   "repository": { "input": "plmercereau/wrekin", "url": "https://github.com/plmercereau/wrekin", "name": "wrekin" },
   "workdir": "/home/me/projects/wrekin/.claude/worktrees/wrekin-01CN",
-  "session": { "terminal": "tmux", "name": "wrekin-01CN", "attach": "wrekin attach wrekin-01CN" },
+  "session": { "terminal": "tmux", "name": "wrekin-01CN", "attach": "wrekin attach wrekin-01CN", "remoteControl": "workstation wrekin-01CN" },
   "attention": null,
-  "ready": { "confirmed": true, "detail": "prompt visible" },
+  "ready": { "confirmed": true, "detail": "prompt visible, Remote Control active" },
   "error": null,
   "createdAt": "2026-11-05T22:10:03Z",
   "updatedAt": "2026-11-05T22:10:41Z"
@@ -168,9 +168,15 @@ Params: `{}`. Result: `{ "at": "<RFC 3339>" }`. For diagnostics only.
   `null` when not applicable.
 - `attention` is present only in `needs_attention`:
   `{ "kind": "approve_repository", "message": "…", "repositoryUrl": "…", "proposedPath": "…" }`.
+- `session.remoteControl`, optional, is the name the session is listed
+  under in claude.ai/code and the Claude app when the node started it with
+  Remote Control (`teleport.remoteControl`); absent otherwise. A relay that
+  predates the field ignores it.
 - `ready.confirmed` is `false` when the harness is still running after the
-  readiness timeout but the prompt was never seen: the job is usable but
-  unverified (the spec's "uncertain outcome"), and `detail` says why.
+  readiness timeout but the prompt was never seen, or when the pane shows
+  one of the harness's own setup screens (first run, sign-in, trust,
+  Remote Control consent), which `detail` names with the attach command:
+  the job is usable but unverified (the spec's "uncertain outcome").
 - Nothing in a `Job` is raw terminal output; `detail` and `message` are
   sentences the node writes.
 

@@ -182,6 +182,20 @@ describe("MCP tools", () => {
     expect(textOf(result)).toContain("wrekin attach wrekin-01CN");
   });
 
+  it("sends the user to the Remote Control session of a ready job that has one", async () => {
+    hub.answer(mine.id, "get_teleport_status", {
+      ok: true,
+      data: readyJob({
+        session: { terminal: "tmux", name: "wrekin-01CN", attach: "wrekin attach wrekin-01CN", remoteControl: "workstation wrekin-01CN" },
+        ready: { confirmed: true, detail: "prompt visible, Remote Control active" },
+      }),
+    });
+    const text = textOf(await call("get_teleport_status", { node: "workstation", jobId: "job_01J" }));
+    expect(text).toContain('listed as "workstation wrekin-01CN"');
+    expect(text).toContain("claude.ai/code");
+    expect(text).toContain("switch to the Remote Control session");
+  });
+
   it("approve_repository passes the decision through and reports a node error", async () => {
     hub.answer(mine.id, "approve_repository", { ok: false, error: { code: "attention_not_pending", message: "the job is not waiting" } });
     const result = await call("approve_repository", { node: "workstation", jobId: "job_01J", approved: false });

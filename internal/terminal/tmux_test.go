@@ -188,7 +188,7 @@ func TestLaunchCreatesTheSocketDirectory(t *testing.T) {
 	// macOS's per-test temporary directories exceed.
 	base, err := os.MkdirTemp("/tmp", "wk")
 	if err != nil {
-		t.Fatal(err)
+		t.Skipf("no short temporary directory here: %v", err)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(base) })
 	dir := filepath.Join(base, "state", "wrekin")
