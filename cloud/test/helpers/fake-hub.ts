@@ -32,6 +32,7 @@ export class FakeHub {
         if (!scripted) return { ok: false, error: { code: "internal", message: "no scripted result" } } as Result<T>;
         return scripted as Result<T>;
       },
+      connect: async () => new Response("no hub in this test", { status: 501 }),
     };
     return hub;
   };
