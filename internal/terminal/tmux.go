@@ -75,7 +75,7 @@ func (t *Tmux) Launch(ctx context.Context, session, workdir string, argv []strin
 	if len(argv) == 0 {
 		return errors.New("tmux: empty command")
 	}
-	_, stderr, err := t.run(ctx, "new-session", "-d", "-s", session, "-c", workdir, shellJoin(argv))
+	_, stderr, err := t.run(ctx, launchArgs(session, workdir, argv)...)
 	if err != nil {
 		return err
 	}
@@ -185,6 +185,16 @@ func (t *Tmux) AttachCommand(session string) []string {
 func (t *Tmux) killServer() error {
 	_, _, err := t.run(nil, "kill-server")
 	return err
+}
+
+// launchArgs builds the new-session command. The session is created detached
+// and, in the same server round trip, told to survive without an attached
+// client even when the user's configuration sets destroy-unattached.
+func launchArgs(session, workdir string, argv []string) []string {
+	return []string{
+		"new-session", "-d", "-s", session, "-c", workdir, shellJoin(argv),
+		";", "set-option", "-t", target(session), "destroy-unattached", "off",
+	}
 }
 
 // shellJoin quotes argv for a POSIX shell.

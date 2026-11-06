@@ -121,6 +121,14 @@ func TestTmuxQuotesArguments(t *testing.T) {
 	}
 }
 
+func TestLaunchArgsKeepDetachedSessionAlive(t *testing.T) {
+	got := strings.Join(launchArgs("wrekin-abc", "/w", []string{"claude", "--teleport", "s"}), " ")
+	want := "new-session -d -s wrekin-abc -c /w 'claude' '--teleport' 's' ; set-option -t =wrekin-abc destroy-unattached off"
+	if got != want {
+		t.Errorf("launchArgs =\n %s\nwant\n %s", got, want)
+	}
+}
+
 func TestLookup(t *testing.T) {
 	if _, err := Lookup("screen"); err == nil {
 		t.Error("screen is not supported")
