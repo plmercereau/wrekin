@@ -84,3 +84,13 @@ jobs:
       - run: nix flake check
       - run: nix build .#wrekin
       - run: ./result/bin/wrekin --version
+
+  homebrew:
+    name: Homebrew formula renders
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: packaging/homebrew/render.sh 0.1.0 packaging/homebrew/testdata/checksums.txt > wrekin.rb
+      - run: ruby -c wrekin.rb
+      - name: Every placeholder is substituted
+        run: "! grep -n '@' wrekin.rb"

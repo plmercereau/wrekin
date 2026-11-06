@@ -27,3 +27,35 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+
+  homebrew:
+    name: Homebrew formula
+    needs: goreleaser
+    # Pre-releases (v0.2.0-rc1) are published on GitHub but not to the tap.
+    if: ${{ !contains(github.ref_name, '-') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: plmercereau/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+          path: tap
+      - name: Download the release checksums
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release download "$GITHUB_REF_NAME" --pattern checksums.txt --dir dist
+      - name: Render the formula
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          mkdir -p tap/Formula
+          packaging/homebrew/render.sh "$version" dist/checksums.txt > tap/Formula/wrekin.rb
+          ruby -c tap/Formula/wrekin.rb
+      - name: Push it to the tap
+        working-directory: tap
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Formula/wrekin.rb
+          git commit -m "wrekin ${GITHUB_REF_NAME}" || { echo "formula unchanged"; exit 0; }
+          git push

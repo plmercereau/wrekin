@@ -1,0 +1,57 @@
+# Homebrew formula for the Wrekin agent, rendered by packaging/homebrew/render.sh
+# from a release's checksums.txt. A formula rather than a cask because
+# `brew services` (the `service` block below) is what runs the daemon.
+class Wrekin < Formula
+  desc "Teleport a Claude Code Cloud session onto one of your own machines, from Claude"
+  homepage "https://wrekin.platyplus.io"
+  version "@VERSION@"
+  license "MIT"
+
+  on_macos do
+    on_arm do
+      url "https://github.com/plmercereau/wrekin/releases/download/v@VERSION@/wrekin_@VERSION@_darwin_arm64.tar.gz"
+      sha256 "@SHA_DARWIN_ARM64@"
+    end
+    on_intel do
+      url "https://github.com/plmercereau/wrekin/releases/download/v@VERSION@/wrekin_@VERSION@_darwin_amd64.tar.gz"
+      sha256 "@SHA_DARWIN_AMD64@"
+    end
+  end
+
+  on_linux do
+    on_arm do
+      url "https://github.com/plmercereau/wrekin/releases/download/v@VERSION@/wrekin_@VERSION@_linux_arm64.tar.gz"
+      sha256 "@SHA_LINUX_ARM64@"
+    end
+    on_intel do
+      url "https://github.com/plmercereau/wrekin/releases/download/v@VERSION@/wrekin_@VERSION@_linux_amd64.tar.gz"
+      sha256 "@SHA_LINUX_AMD64@"
+    end
+  end
+
+  depends_on "tmux"
+
+  def install
+    bin.install "wrekin"
+  end
+
+  def caveats
+    <<~EOS
+      Pair this machine with your Wrekin account, then start the daemon:
+        wrekin auth
+        brew services start wrekin
+    EOS
+  end
+
+  service do
+    run [opt_bin/"wrekin", "daemon"]
+    keep_alive true
+    log_path var/"log/wrekin.log"
+    error_log_path var/"log/wrekin.log"
+    working_dir HOMEBREW_PREFIX
+  end
+
+  test do
+    assert_match version.to_s, shell_output("#{bin}/wrekin --version")
+  end
+end

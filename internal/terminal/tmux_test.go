@@ -61,7 +61,11 @@ func TestTmuxLaunchExistsCaptureKill(t *testing.T) {
 	if err != nil || exists {
 		t.Fatalf("session must not exist yet: %v %v", exists, err)
 	}
-	if err := tm.Launch(context.Background(), session, workdir, []string{"sh", "-c", "echo READY; sleep 30"}); err != nil {
+	// `exec` so that the pane's foreground process becomes `sleep`, the way a
+	// harness takes the pane over once its shell wrapper has started it: tmux's
+	// pane_current_command names the foreground process group leader, which
+	// stays `sh` as long as the shell is only waiting on a child.
+	if err := tm.Launch(context.Background(), session, workdir, []string{"sh", "-c", "echo READY; exec sleep 30"}); err != nil {
 		t.Fatalf("Launch: %v", err)
 	}
 	t.Cleanup(func() { _ = tm.Kill(session) })

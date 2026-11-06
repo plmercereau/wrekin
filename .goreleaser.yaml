@@ -79,37 +79,7 @@ release:
     - Nix: `nix run github:plmercereau/wrekin`
     - Or download the archive for your platform above.
 
-# Homebrew formula, pushed to the tap repository plmercereau/homebrew-tap.
-# A formula (not a cask) because `brew services` needs the `service` block to
-# run the daemon as a user-level launchd agent / systemd unit.
-brews:
-  - name: wrekin
-    ids:
-      - default
-    repository:
-      owner: plmercereau
-      name: homebrew-tap
-      branch: main
-      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
-    directory: Formula
-    commit_author:
-      name: goreleaser
-      email: goreleaser@users.noreply.github.com
-    commit_msg_template: "wrekin {{ .Tag }}"
-    homepage: https://wrekin.platyplus.io
-    description: Teleport a Claude Code Cloud session onto one of your own machines, from Claude, with no inbound connection
-    license: MIT
-    # Pre-releases (v1.2.3-rc1 ...) are not pushed to the tap.
-    skip_upload: auto
-    caveats: |
-      Pair this machine with your Wrekin account, then start the daemon:
-        wrekin auth
-        brew services start wrekin
-    service: |
-      run [opt_bin/"wrekin", "daemon"]
-      keep_alive true
-      log_path var/"log/wrekin.log"
-      error_log_path var/"log/wrekin.log"
-      working_dir HOMEBREW_PREFIX
-    test: |
-      assert_match version.to_s, shell_output("#{bin}/wrekin --version")
+# The Homebrew formula is not GoReleaser's: its `brews` section is deprecated
+# in favour of casks, and a cask cannot carry the `service` block that
+# `brew services` needs. packaging/homebrew/render.sh writes the formula from
+# checksums.txt and release.yml pushes it to the tap.

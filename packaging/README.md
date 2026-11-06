@@ -10,7 +10,7 @@ at the repository root is the other distribution channel and is described in
 | Channel | Produced by | Notes |
 |---|---|---|
 | GitHub Releases | `.goreleaser.yaml`, `release.yml` | `tar.gz` per `linux`/`darwin` × `amd64`/`arm64`, plus `checksums.txt` |
-| Homebrew | GoReleaser `brews` section | Formula written to `plmercereau/homebrew-tap`, `Formula/wrekin.rb`, with a `service` block for `brew services` |
+| Homebrew | `homebrew/wrekin.rb.tmpl` + `homebrew/render.sh`, run by `release.yml` | Formula written to `plmercereau/homebrew-tap`, `Formula/wrekin.rb`, with a `service` block for `brew services` |
 | Nix | `flake.nix`, `nix/` | `nix run github:plmercereau/wrekin`; a Home Manager module runs the daemon |
 
 ## Cutting a release
@@ -33,9 +33,10 @@ at the repository root is the other distribution channel and is described in
    - creates the GitHub release with a changelog grouped by conventional
      commit prefix (`feat`, `fix`, `build`, `docs`; `chore`, `ci`, `test`
      and `style` are left out);
-   - writes the Homebrew formula to the tap. Pre-release tags
-     (`v0.2.0-rc1`) are published on GitHub but not pushed to the tap
-     (`skip_upload: auto`).
+   Then the `homebrew` job of the same workflow renders
+   `Formula/wrekin.rb` from the release's `checksums.txt` with
+   `packaging/homebrew/render.sh` and pushes it to the tap. Pre-release
+   tags (`v0.2.0-rc1`) are published on GitHub but not pushed to the tap.
 4. Check `brew install plmercereau/tap/wrekin` and
    `nix run github:plmercereau/wrekin/v0.1.0 -- --version` on a machine.
 
@@ -56,7 +57,7 @@ A repository `plmercereau/homebrew-tap` on GitHub, with a `Formula/`
 directory (it may start empty). Users then run
 `brew install plmercereau/tap/wrekin`; Homebrew resolves `plmercereau/tap`
 to that repository. GoReleaser commits `Formula/wrekin.rb` to its `main`
-branch on every stable release.
+branch on every stable release (the `homebrew` job of `release.yml`).
 
 ### GitHub Actions secrets
 
@@ -93,8 +94,11 @@ remote database (`wrangler d1 migrations apply wrekin --remote`) and then
   dependency of the repository: run it through
   `nix shell nixpkgs#goreleaser -c goreleaser check` or
   `go run github.com/goreleaser/goreleaser/v2@latest check`.
-- The `brews` section is the formula publisher. GoReleaser also offers
-  `homebrew_casks`; Wrekin stays a formula because `brew services` (the
-  `service` block) is what runs the daemon on macOS and Linux.
+- The formula is not GoReleaser's: its `brews` section is deprecated in
+  favour of `homebrew_casks` (and `goreleaser check` fails on deprecated
+  options), while a cask cannot carry the `service` block that
+  `brew services` needs to run the daemon. `packaging/homebrew/render.sh`
+  fills `wrekin.rb.tmpl` with the version and the four archive checksums;
+  CI renders it from `testdata/checksums.txt` and checks the Ruby syntax.
 - The formula runs `wrekin daemon` as a user-level service; the Home Manager
   module in `nix/module.nix` does the same with `systemd --user` or launchd.
