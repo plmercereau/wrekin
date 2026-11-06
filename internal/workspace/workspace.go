@@ -120,6 +120,21 @@ func (p *Policy) claimedRoot(lexical string) string {
 	}
 }
 
+// IsRoot reports whether a canonical path is one of the allowed roots or the
+// default root: the directories the policy guards, which must never be
+// removed as a whole.
+func (p *Policy) IsRoot(canon string) bool {
+	if canon == p.DefaultRoot {
+		return true
+	}
+	for _, r := range p.Roots {
+		if canon == r {
+			return true
+		}
+	}
+	return false
+}
+
 // rootOf returns the root a canonical path is under, or "".
 func (p *Policy) rootOf(canon string) string {
 	for _, r := range p.Roots {

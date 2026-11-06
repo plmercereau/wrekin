@@ -59,6 +59,28 @@ func TestResolveInsideRoot(t *testing.T) {
 	}
 }
 
+func TestIsRootNamesRootsAndDefault(t *testing.T) {
+	root, _ := filepath.EvalSymlinks(t.TempDir())
+	def := filepath.Join(root, "clones")
+	if err := os.MkdirAll(def, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	p, err := NewPolicy([]string{root}, def)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range []string{root, def} {
+		if !p.IsRoot(r) {
+			t.Errorf("IsRoot(%q) = false", r)
+		}
+	}
+	for _, other := range []string{filepath.Join(root, "proj"), filepath.Join(def, "x"), root + "2", "/"} {
+		if p.IsRoot(other) {
+			t.Errorf("IsRoot(%q) = true", other)
+		}
+	}
+}
+
 func TestResolveOutsideRootIsNotAllowed(t *testing.T) {
 	p, _ := newTestPolicy(t)
 	_, err := p.Resolve(filepath.Join(t.TempDir(), "elsewhere"))

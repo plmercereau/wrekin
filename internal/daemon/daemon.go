@@ -10,6 +10,8 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/plmercereau/wrekin/internal/config"
@@ -214,7 +216,10 @@ func (d *daemon) handleControl(ctx context.Context, method string, params json.R
 
 // cleanup removes what Wrekin created for finished jobs: tmux sessions,
 // worktrees it added and clones it made. Repositories that existed before are
-// never touched; jobs still in flight are skipped.
+// never touched; jobs still in flight are skipped. Every recorded path is
+// re-checked against the policy first: jobs.json is written only by the
+// daemon, but a bug there must not become the removal of a user directory.
+// A refused path is reported under Errors and left alone.
 func (d *daemon) cleanup(ctx context.Context, dryRun bool) control.CleanupReport {
 	report := control.CleanupReport{DryRun: dryRun, Sessions: []string{}, Worktrees: []string{}, Clones: []string{}, Jobs: []string{}, Skipped: []string{}, Errors: []string{}}
 	for _, j := range d.store.List() {
@@ -234,23 +239,27 @@ func (d *daemon) cleanup(ctx context.Context, dryRun bool) control.CleanupReport
 			}
 		}
 		if j.CreatedWorktree && j.Workdir != "" && j.CheckoutDir != "" {
-			if _, err := os.Stat(j.Workdir); err == nil {
-				report.Worktrees = append(report.Worktrees, j.Workdir)
+			checkout, workdir, err := d.worktreeToRemove(j)
+			if err != nil {
+				report.Errors = append(report.Errors, fmt.Sprintf("worktree %s: %v", j.Workdir, err))
+			} else if _, err := os.Stat(workdir); err == nil {
+				report.Worktrees = append(report.Worktrees, workdir)
 				if !dryRun {
-					if err := d.git.RemoveWorktree(ctx, j.CheckoutDir, j.Workdir); err != nil {
-						report.Errors = append(report.Errors, fmt.Sprintf("worktree %s: %v", j.Workdir, err))
+					if err := d.git.RemoveWorktree(ctx, checkout, workdir); err != nil {
+						report.Errors = append(report.Errors, fmt.Sprintf("worktree %s: %v", workdir, err))
 					}
 				}
 			}
 		}
 		if j.CreatedClone && j.CheckoutDir != "" {
-			if _, err := d.policy.Resolve(j.CheckoutDir); err == nil {
-				if _, err := os.Stat(j.CheckoutDir); err == nil {
-					report.Clones = append(report.Clones, j.CheckoutDir)
-					if !dryRun {
-						if err := os.RemoveAll(j.CheckoutDir); err != nil {
-							report.Errors = append(report.Errors, fmt.Sprintf("clone %s: %v", j.CheckoutDir, err))
-						}
+			clone, err := d.cloneToRemove(j)
+			if err != nil {
+				report.Errors = append(report.Errors, fmt.Sprintf("clone %s: %v", j.CheckoutDir, err))
+			} else if _, err := os.Stat(clone); err == nil {
+				report.Clones = append(report.Clones, clone)
+				if !dryRun {
+					if err := os.RemoveAll(clone); err != nil {
+						report.Errors = append(report.Errors, fmt.Sprintf("clone %s: %v", clone, err))
 					}
 				}
 			}
@@ -266,4 +275,37 @@ func (d *daemon) cleanup(ctx context.Context, dryRun bool) control.CleanupReport
 		d.logger.Info("cleanup done", "sessions", len(report.Sessions), "worktrees", len(report.Worktrees), "clones", len(report.Clones), "jobs", len(report.Jobs))
 	}
 	return report
+}
+
+// worktreeToRemove re-checks a recorded worktree: the checkout and the
+// worktree must both resolve under an allowed root, and the worktree must sit
+// in the checkout's .claude/worktrees directory, the only place Wrekin creates
+// one. It returns the canonical paths to hand to git.
+func (d *daemon) worktreeToRemove(j *jobs.Job) (checkout, workdir string, err error) {
+	checkout, err = d.policy.Resolve(j.CheckoutDir)
+	if err != nil {
+		return "", "", fmt.Errorf("checkout %s: %w", j.CheckoutDir, err)
+	}
+	workdir, err = d.policy.Resolve(j.Workdir)
+	if err != nil {
+		return "", "", err
+	}
+	worktrees := filepath.Join(checkout, ".claude", "worktrees")
+	if !strings.HasPrefix(workdir, worktrees+string(filepath.Separator)) {
+		return "", "", fmt.Errorf("%s is not under %s; refusing to remove it", workdir, worktrees)
+	}
+	return checkout, workdir, nil
+}
+
+// cloneToRemove re-checks a recorded clone: it must resolve under an allowed
+// root and must not be a root itself, which os.RemoveAll would empty.
+func (d *daemon) cloneToRemove(j *jobs.Job) (string, error) {
+	clone, err := d.policy.Resolve(j.CheckoutDir)
+	if err != nil {
+		return "", err
+	}
+	if d.policy.IsRoot(clone) {
+		return "", fmt.Errorf("%s is an allowed root; refusing to remove it", clone)
+	}
+	return clone, nil
 }

@@ -3,14 +3,21 @@ package daemon
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
+	"io/fs"
+	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/plmercereau/wrekin/internal/gitx"
 	"github.com/plmercereau/wrekin/internal/jobs"
 	"github.com/plmercereau/wrekin/internal/protocol"
+	"github.com/plmercereau/wrekin/internal/workspace"
 )
 
 type fakeRunner struct {
@@ -181,5 +188,137 @@ func TestRunWithoutIdentityExplains(t *testing.T) {
 	err := Run(ctx, Options{SettingsPath: filepath.Join(t.TempDir(), "settings.json"), Version: "test"})
 	if err == nil || !strings.Contains(err.Error(), "wrekin auth") {
 		t.Fatalf("err = %v, want a hint to run wrekin auth", err)
+	}
+}
+
+// fakeTerm is a terminal without sessions; cleanup only asks it about the
+// sessions a job records.
+type fakeTerm struct{}
+
+func (fakeTerm) Name() string                                           { return "tmux" }
+func (fakeTerm) Available() error                                       { return nil }
+func (fakeTerm) Launch(context.Context, string, string, []string) error { return nil }
+func (fakeTerm) Exists(string) (bool, error)                            { return false, nil }
+func (fakeTerm) Running(string) (bool, error)                           { return false, nil }
+func (fakeTerm) Capture(string, int) (string, error)                    { return "", nil }
+func (fakeTerm) Kill(string) error                                      { return nil }
+func (fakeTerm) List(string) ([]string, error)                          { return nil, nil }
+func (fakeTerm) AttachCommand(string) []string                          { return nil }
+
+func gitCmd(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(),
+		"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@example.com",
+		"GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@example.com",
+		"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+}
+
+// cleanup re-checks every path a job records before removing anything:
+// jobs.json is written only by the daemon, but a bug there must not turn into
+// the removal of a user directory or of an allowed root. The refused jobs are
+// reported under Errors and their directories are left alone; the worktrees
+// are real so that git would remove them if asked.
+func TestCleanupRefusesPathsOutsidePolicy(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git binary not installed")
+	}
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy, err := workspace.NewPolicy([]string{root}, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store, err := jobs.Open(filepath.Join(t.TempDir(), "jobs.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	outside, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	checkout := filepath.Join(root, "repo")
+	if err := os.MkdirAll(checkout, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	gitCmd(t, checkout, "init", "-q", "-b", "main")
+	if err := os.WriteFile(filepath.Join(checkout, "README.md"), []byte("hi\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCmd(t, checkout, "add", "README.md")
+	gitCmd(t, checkout, "commit", "-q", "-m", "initial")
+	elsewhere := filepath.Join(outside, "elsewhere")
+	gitCmd(t, checkout, "worktree", "add", "-q", "-b", "wt-outside", "--", elsewhere)
+	inside := filepath.Join(checkout, "src")
+	gitCmd(t, checkout, "worktree", "add", "-q", "-b", "wt-inside", "--", inside)
+	good := filepath.Join(checkout, ".claude", "worktrees", "good")
+	gitCmd(t, checkout, "worktree", "add", "-q", "-b", "wt-good", "--", good)
+	clone := filepath.Join(root, "clone")
+	if err := os.MkdirAll(clone, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	worktreeJob := func(id, workdir, checkout string) {
+		j := &jobs.Job{Job: protocol.Job{ID: id, State: protocol.StateFailed, Workdir: workdir}, CreatedWorktree: true, CheckoutDir: checkout}
+		if err := store.Put(j); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cloneJob := func(id, checkout string) {
+		j := &jobs.Job{Job: protocol.Job{ID: id, State: protocol.StateFailed}, CreatedClone: true, CheckoutDir: checkout}
+		if err := store.Put(j); err != nil {
+			t.Fatal(err)
+		}
+	}
+	worktreeJob("job_wt_outside", elsewhere, checkout)
+	worktreeJob("job_wt_not_under_worktrees", inside, checkout)
+	worktreeJob("job_wt_checkout_outside", filepath.Join(outside, ".claude", "worktrees", "x"), outside)
+	cloneJob("job_clone_is_root", root)
+	worktreeJob("job_wt_good", good, checkout)
+	cloneJob("job_clone_good", clone)
+
+	d := &daemon{store: store, term: fakeTerm{}, git: gitx.Runner{}, policy: policy, logger: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	report := d.cleanup(context.Background(), false)
+
+	for _, dir := range []string{elsewhere, inside, root, checkout} {
+		if _, err := os.Stat(dir); err != nil {
+			t.Errorf("%s must still exist: %v", dir, err)
+		}
+	}
+	for _, dir := range []string{good, clone} {
+		if _, err := os.Stat(dir); !errors.Is(err, fs.ErrNotExist) {
+			t.Errorf("%s should have been removed (stat: %v)", dir, err)
+		}
+	}
+	if len(report.Errors) != 4 {
+		t.Errorf("errors = %v, want one per refused job", report.Errors)
+	}
+	for _, want := range []string{elsewhere, inside, root, outside} {
+		found := false
+		for _, e := range report.Errors {
+			if strings.Contains(e, want) {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("errors %v do not name %s", report.Errors, want)
+		}
+	}
+	if len(report.Worktrees) != 1 || report.Worktrees[0] != good {
+		t.Errorf("worktrees = %v, want only %s", report.Worktrees, good)
+	}
+	if len(report.Clones) != 1 || report.Clones[0] != clone {
+		t.Errorf("clones = %v, want only %s", report.Clones, clone)
+	}
+	// The job records are dropped either way; the refusal is in the report.
+	if len(report.Jobs) != 6 || len(store.List()) != 0 {
+		t.Errorf("jobs = %v, remaining %d", report.Jobs, len(store.List()))
 	}
 }
