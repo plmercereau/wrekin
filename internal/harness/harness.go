@@ -52,6 +52,10 @@ type Harness interface {
 	// harness waits on its own setup (first run, sign-in, trust) rather than
 	// opening the session, or "" when it shows none of them.
 	SetupScreen(pane string) string
+	// ExitReason explains, in one sentence for the user, why the harness
+	// exited before its prompt, from what its pane shows; "" when it cannot
+	// tell.
+	ExitReason(ctx context.Context, pane string) string
 	// ExitedIsFailure says whether the harness exiting before readiness is a
 	// failure (true for an interactive harness).
 	ExitedIsFailure() bool

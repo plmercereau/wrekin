@@ -31,6 +31,9 @@ type Terminal interface {
 	Capture(session string, lines int) (string, error)
 	// SendLine types text into the session's pane, literally, then Enter.
 	SendLine(session, text string) error
+	// KeepOnExit makes the session's pane stay, with its output, after its
+	// program exits (Launch turns it on), or go with it again.
+	KeepOnExit(session string, keep bool) error
 	// Kill terminates the session.
 	Kill(session string) error
 	// List returns the sessions whose name starts with prefix.

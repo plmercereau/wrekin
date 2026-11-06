@@ -186,6 +186,11 @@ in
             Restart = "on-failure";
             RestartSec = 5;
             Environment = [ "PATH=${servicePath}" ];
+            # The teleported sessions live in a tmux server the daemon starts,
+            # inside this unit's control group: the default KillMode
+            # (control-group) kills it, and every session with it, on each
+            # restart, a Home Manager activation that updates Wrekin included.
+            KillMode = "process";
           };
           Install = {
             WantedBy = [ "default.target" ];
@@ -204,6 +209,8 @@ in
             ];
             RunAtLoad = true;
             KeepAlive = true;
+            # Same reason as KillMode above: the tmux server outlives the daemon.
+            AbandonProcessGroup = true;
             # launchd starts agents with PATH=/usr/bin:/bin:/usr/sbin:/sbin.
             EnvironmentVariables = {
               PATH = servicePath;

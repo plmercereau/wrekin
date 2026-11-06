@@ -31,6 +31,8 @@ type fakeTerminal struct {
 	available  error
 	// sent records SendLine calls as "session: text".
 	sent []string
+	// keepOnExit records KeepOnExit calls as "session=bool".
+	keepOnExit []string
 }
 
 type fakeSession struct {
@@ -118,6 +120,13 @@ func (f *fakeTerminal) AttachCommand(session string) []string {
 	return []string{"tmux", "attach-session", "-t", "=" + session}
 }
 
+func (f *fakeTerminal) KeepOnExit(session string, keep bool) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.keepOnExit = append(f.keepOnExit, fmt.Sprintf("%s=%v", session, keep))
+	return nil
+}
+
 func (f *fakeTerminal) SendLine(session, text string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -136,6 +145,15 @@ func (f *fakeTerminal) setPane(session, pane string) {
 	defer f.mu.Unlock()
 	if s, ok := f.sessions[session]; ok {
 		s.pane = pane
+	}
+}
+
+// stop makes the session's program exit while its pane stays (remain-on-exit).
+func (f *fakeTerminal) stop(session string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if s, ok := f.sessions[session]; ok {
+		s.running = false
 	}
 }
 
@@ -192,6 +210,12 @@ func (f *fakeHarness) Trust(dir string) error {
 }
 func (f *fakeHarness) LaunchArgs(id string) []string { return []string{"claude", "--teleport", id} }
 func (f *fakeHarness) InputIdle(pane string) bool    { return strings.Contains(pane, "IDLE") }
+func (f *fakeHarness) ExitReason(_ context.Context, pane string) string {
+	if strings.Contains(pane, "Session not found") {
+		return "Claude Code said: Session not found"
+	}
+	return ""
+}
 func (f *fakeHarness) RemoteControlCommand(name string) string {
 	if strings.Contains(name, "!") {
 		return ""

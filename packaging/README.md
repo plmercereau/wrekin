@@ -134,6 +134,15 @@ D1 database, the Worker entity and the custom domain are its stack's.
   neither Homebrew's tmux and `claude-code` cask nor the native installer's
   `~/.local/bin/claude`. Homebrew supports `Dir.home` in service strings (it
   is what its `/$HOME` API placeholder stands for).
+- The teleported sessions live in a tmux server the daemon starts. The
+  systemd units (`wrekin start`, the Home Manager module) set
+  `KillMode=process` and the launchd agents `AbandonProcessGroup`, so a
+  restart or an upgrade of the daemon leaves the sessions running: with
+  systemd's default, the whole control group, tmux included, was killed on
+  every restart (observed on a NixOS node). The formula's `service` block
+  has no such setting: on macOS tmux leaves launchd's process group by
+  itself when it daemonizes, but on Linux `brew services restart wrekin`
+  still ends the sessions.
 - The formula runs `wrekin daemon` as a user-level service; the Home Manager
   module in `nix/module.nix` does the same with `systemd --user` or launchd.
   `wrekin start` does it too, from the Go code (`internal/service`), for

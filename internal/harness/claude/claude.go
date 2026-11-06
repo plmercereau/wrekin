@@ -90,9 +90,26 @@ func (c *Claude) Detect() (harness.Info, error) {
 // credentials. A version without that command answers something else, and
 // the result is then an error: the caller cannot tell and goes on.
 func (c *Claude) SignedIn(ctx context.Context) (bool, error) {
+	out, err := c.authStatus(ctx)
+	if err != nil {
+		return false, err
+	}
+	var status struct {
+		LoggedIn *bool `json:"loggedIn"`
+	}
+	if err := json.Unmarshal(out, &status); err != nil || status.LoggedIn == nil {
+		return false, fmt.Errorf("claude auth status: unexpected output %q", truncate(string(out), 200))
+	}
+	return *status.LoggedIn, nil
+}
+
+// authStatus runs `claude auth status --json` and returns its JSON output,
+// whatever its exit status (1 when signed out), or an error when it printed
+// no JSON object.
+func (c *Claude) authStatus(ctx context.Context) ([]byte, error) {
 	path, err := exec.LookPath(c.binary)
 	if err != nil {
-		return false, fmt.Errorf("%w: %s", exec.ErrNotFound, c.binary)
+		return nil, fmt.Errorf("%w: %s", exec.ErrNotFound, c.binary)
 	}
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
@@ -100,16 +117,14 @@ func (c *Claude) SignedIn(ctx context.Context) (bool, error) {
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
 	runErr := cmd.Run()
-	var status struct {
-		LoggedIn *bool `json:"loggedIn"`
-	}
-	if err := json.Unmarshal(bytes.TrimSpace(stdout.Bytes()), &status); err != nil || status.LoggedIn == nil {
+	out := bytes.TrimSpace(stdout.Bytes())
+	if !bytes.HasPrefix(out, []byte("{")) {
 		if runErr != nil {
-			return false, fmt.Errorf("claude auth status: %w", runErr)
+			return nil, fmt.Errorf("claude auth status: %w", runErr)
 		}
-		return false, fmt.Errorf("claude auth status: unexpected output %q", truncate(stdout.String(), 200))
+		return nil, fmt.Errorf("claude auth status: unexpected output %q", truncate(string(out), 200))
 	}
-	return *status.LoggedIn, nil
+	return out, nil
 }
 
 // Login runs `claude auth login` on the caller's terminal: it prints a URL,
@@ -256,6 +271,62 @@ func (c *Claude) SetupScreen(pane string) string {
 		}
 	}
 	return ""
+}
+
+// ExitReason implements harness.Harness: the last lines Claude Code printed,
+// and, when it could not find the session, which account this machine's
+// Claude Code is signed in with. A cloud session can only be teleported by
+// the Claude account that owns it, and a machine signed in with another one
+// (a work account next to a personal one) gets "Session not found".
+func (c *Claude) ExitReason(ctx context.Context, pane string) string {
+	var said []string
+	for _, line := range strings.Split(pane, "\n") {
+		line = strings.TrimSpace(strings.Map(func(r rune) rune {
+			if r < ' ' || r == 0x7f {
+				return -1
+			}
+			return r
+		}, line))
+		if line == "" || strings.HasPrefix(line, "Pane is dead") {
+			continue
+		}
+		said = append(said, line)
+	}
+	if len(said) > 3 {
+		said = said[len(said)-3:]
+	}
+	reason := truncate(strings.Join(said, " / "), 300)
+	if reason == "" {
+		return ""
+	}
+	reason = "Claude Code said: " + reason
+	if strings.Contains(reason, "Session not found") {
+		if email, org, err := c.account(ctx); err == nil && email != "" {
+			who := email
+			if org != "" {
+				who += " (" + org + ")"
+			}
+			reason += ". Claude Code on this machine is signed in as " + who +
+				": a cloud session can only be teleported by the Claude account that owns it; sign in there with that account (`claude auth login`)"
+		}
+	}
+	return reason
+}
+
+// account reads the signed-in Claude account from `claude auth status --json`.
+func (c *Claude) account(ctx context.Context) (email, org string, err error) {
+	out, err := c.authStatus(ctx)
+	if err != nil {
+		return "", "", err
+	}
+	var status struct {
+		Email   string `json:"email"`
+		OrgName string `json:"orgName"`
+	}
+	if err := json.Unmarshal(out, &status); err != nil {
+		return "", "", err
+	}
+	return status.Email, status.OrgName, nil
 }
 
 // ExitedIsFailure implements harness.Harness.

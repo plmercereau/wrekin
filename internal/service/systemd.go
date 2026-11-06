@@ -26,6 +26,10 @@ ExecStart=%s daemon
 Environment="PATH=%s"
 Restart=on-failure
 RestartSec=5
+# The teleported sessions live in a tmux server the daemon starts, inside
+# this unit's control group: the default KillMode would kill it, and every
+# session with it, whenever the daemon restarts or is upgraded.
+KillMode=process
 
 [Install]
 WantedBy=default.target
