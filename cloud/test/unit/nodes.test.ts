@@ -19,7 +19,7 @@ nodesSuite(
 
 describe("nodes.list with the hub", () => {
   it("merges the stored rows with the online state", async () => {
-    const { userId, headers } = await createTestSession(services.auth, "online");
+    const { userId, headers, cookieHeaders } = await createTestSession(services.auth, "online");
     const key = await generateNodeKey();
     const created = await fetcher("/api/nodes", {
       method: "POST",
@@ -31,7 +31,7 @@ describe("nodes.list with the hub", () => {
       { nodeId, connectedAt: "2026-11-06T00:00:00Z", agentVersion: "0.2.0", harnesses: [{ id: "claude-code", available: true }] },
       { nodeId: "node_stale_socket_of_a_deleted_node", connectedAt: "2026-11-06T00:00:00Z" },
     ]);
-    const list = await (await caller(headers)).nodes.list();
+    const list = await (await caller(cookieHeaders)).nodes.list(); // the bearer died with the registration
     expect(list).toHaveLength(1);
     expect(list[0]).toMatchObject({
       id: nodeId,

@@ -79,7 +79,23 @@ export function createApiHandler(env: Env, services: Services): (request: Reques
     if (!user) return json({ error: "unauthenticated" }, 401);
     const body = registerSchema.safeParse(await request.json().catch(() => null));
     if (!body.success) return json({ error: "invalid_body", message: z.prettifyError(body.error) }, 400);
-    return json(await registerNode(services, user.id, body.data), 201);
+    const registered = await registerNode(services, user.id, body.data);
+    if (hasBearer(request)) await revokeBearerSession(request);
+    return json(registered, 201);
+  }
+
+  /**
+   * The device flow hands the agent a full session token, scoped to nothing: once the node
+   * row is written the token has served its purpose, so the relay ends that session itself
+   * rather than trust the agent's sign-out. The bearer plugin has turned the header into
+   * the session cookie by the time `signOut` runs, so it deletes exactly that session.
+   */
+  async function revokeBearerSession(request: Request): Promise<void> {
+    try {
+      await auth.api.signOut({ headers: request.headers });
+    } catch (error) {
+      console.warn("register: could not revoke the device-flow session", error instanceof Error ? error.message : String(error));
+    }
   }
 
   async function unregister(request: Request): Promise<Response> {

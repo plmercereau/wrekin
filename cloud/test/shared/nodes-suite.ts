@@ -27,7 +27,7 @@ export function nodesSuite(fetcher: Fetcher, newSession: SessionFactory, listNod
     });
 
     it("registers a node for the session's account and lists it", async () => {
-      const { userId, headers } = await newSession("alice");
+      const { userId, headers, cookieHeaders } = await newSession("alice");
       const key = await generateNodeKey();
       const res = await fetcher(
         "/api/nodes",
@@ -38,7 +38,7 @@ export function nodesSuite(fetcher: Fetcher, newSession: SessionFactory, listNod
       expect(body.nodeId).toMatch(/^node_[a-z2-7]{26}$/);
       expect(body.accountId).toBe(userId);
 
-      const nodes = await listNodes(headers);
+      const nodes = await listNodes(cookieHeaders);
       expect(nodes).toHaveLength(1);
       expect(nodes[0]).toMatchObject({ id: body.nodeId, name: "workstation", online: false, agentVersion: "0.1.0" });
       expect(nodes[0]?.fingerprint).toMatch(/^[0-9a-f]{4}(:[0-9a-f]{4}){3}$/);
@@ -46,11 +46,11 @@ export function nodesSuite(fetcher: Fetcher, newSession: SessionFactory, listNod
     });
 
     it("refuses a second node of the same name on the account with 409 name_taken", async () => {
-      const { headers } = await newSession("bob");
+      const { headers, cookieHeaders } = await newSession("bob");
       const first = await generateNodeKey();
       const second = await generateNodeKey();
       expect((await fetcher("/api/nodes", json({ name: "laptop", publicKey: first.publicKey }, headers))).status).toBe(201);
-      const dup = await fetcher("/api/nodes", json({ name: "laptop", publicKey: second.publicKey }, headers));
+      const dup = await fetcher("/api/nodes", json({ name: "laptop", publicKey: second.publicKey }, cookieHeaders));
       expect(dup.status).toBe(409);
       expect(((await dup.json()) as { error: string }).error).toBe("name_taken");
     });
@@ -63,12 +63,12 @@ export function nodesSuite(fetcher: Fetcher, newSession: SessionFactory, listNod
     });
 
     it("refuses the same key under another base64 spelling with 409 key_taken", async () => {
-      const { headers } = await newSession("faythe");
+      const { headers, cookieHeaders } = await newSession("faythe");
       const key = await generateNodeKey();
       const other = alternateSpelling(key.publicKey);
       expect(other).not.toBe(key.publicKey);
       expect((await fetcher("/api/nodes", json({ name: "first", publicKey: other }, headers))).status).toBe(201);
-      const dup = await fetcher("/api/nodes", json({ name: "second", publicKey: key.publicKey }, headers));
+      const dup = await fetcher("/api/nodes", json({ name: "second", publicKey: key.publicKey }, cookieHeaders));
       expect(dup.status).toBe(409);
       expect(((await dup.json()) as { error: string }).error).toBe("key_taken");
     });
@@ -83,11 +83,11 @@ export function nodesSuite(fetcher: Fetcher, newSession: SessionFactory, listNod
     });
 
     it("accepts letters, digits, spaces, dots, underscores and dashes in a name, and nothing else", async () => {
-      const { headers } = await newSession("gus");
+      const { headers, cookieHeaders } = await newSession("gus");
       const ok = await fetcher("/api/nodes", json({ name: "work-station 2", publicKey: (await generateNodeKey()).publicKey }, headers));
       expect(ok.status).toBe(201);
       for (const name of ["my\nnode", "node_abc", "NODE_abc", "-dash-first", "x".repeat(65), "tab\tbed"]) {
-        const res = await fetcher("/api/nodes", json({ name, publicKey: (await generateNodeKey()).publicKey }, headers));
+        const res = await fetcher("/api/nodes", json({ name, publicKey: (await generateNodeKey()).publicKey }, cookieHeaders));
         expect(res.status, JSON.stringify(name)).toBe(400);
         expect(((await res.json()) as { error: string }).error).toBe("invalid_body");
       }
@@ -98,6 +98,27 @@ export function nodesSuite(fetcher: Fetcher, newSession: SessionFactory, listNod
       const res = await fetcher("/api/nodes", json({ name: "" }, headers));
       expect(res.status).toBe(400);
       expect(((await res.json()) as { error: string }).error).toBe("invalid_body");
+    });
+  });
+
+  describe("the device-flow session", () => {
+    it("is revoked once the node is registered, the browser's session is not", async () => {
+      const { headers, cookieHeaders } = await newSession("ida");
+      const created = await fetcher("/api/nodes", json({ name: "paired", publicKey: (await generateNodeKey()).publicKey }, headers));
+      expect(created.status).toBe(201);
+      const session = await fetcher("/api/auth/get-session", { headers });
+      expect(session.status).toBe(200);
+      expect(await session.json()).toBeNull();
+      const again = await fetcher("/api/nodes", json({ name: "paired-again", publicKey: (await generateNodeKey()).publicKey }, headers));
+      expect(again.status).toBe(401);
+      expect(await listNodes(cookieHeaders)).toHaveLength(1);
+    });
+
+    it("survives a refused registration, so the agent can retry", async () => {
+      const { headers } = await newSession("ivy");
+      expect((await fetcher("/api/nodes", json({ name: "", publicKey: (await generateNodeKey()).publicKey }, headers))).status).toBe(400);
+      expect(await (await fetcher("/api/auth/get-session", { headers })).json()).not.toBeNull();
+      expect((await fetcher("/api/nodes", json({ name: "retry", publicKey: (await generateNodeKey()).publicKey }, headers))).status).toBe(201);
     });
   });
 
@@ -135,20 +156,21 @@ export function nodesSuite(fetcher: Fetcher, newSession: SessionFactory, listNod
 
   describe("signed unregistration", () => {
     async function registered(label: string) {
-      const { headers } = await newSession(label);
+      const { headers, cookieHeaders } = await newSession(label);
       const key = await generateNodeKey();
       const res = await fetcher("/api/nodes", json({ name: label, publicKey: key.publicKey }, headers));
+      expect(res.status).toBe(201);
       const { nodeId } = (await res.json()) as { nodeId: string };
-      return { nodeId, key, headers };
+      return { nodeId, key, cookieHeaders };
     }
 
     it("removes the node when the signature over the fresh timestamp verifies", async () => {
-      const { nodeId, key, headers } = await registered("heidi");
+      const { nodeId, key, cookieHeaders } = await registered("heidi");
       const timestamp = new Date().toISOString();
       const signature = await key.sign(unregisterMessage(nodeId, timestamp));
       const res = await fetcher("/api/nodes/unregister", json({ nodeId, timestamp, signature }));
       expect(res.status).toBe(204);
-      expect(await listNodes(headers)).toHaveLength(0);
+      expect(await listNodes(cookieHeaders)).toHaveLength(0);
     });
 
     it("accepts Unix seconds as the timestamp", async () => {
