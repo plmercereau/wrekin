@@ -1,0 +1,4 @@
+# GitHub's archives, which Nix downloads for `github:` flake inputs, replace
+# the placeholder in nix/describe.txt with `git describe`: flake.nix reads the
+# version of a tag from there.
+nix/describe.txt export-subst

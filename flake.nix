@@ -18,10 +18,21 @@
       ];
       forAllSystems = f: lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
 
-      # A checkout is 0.0.0-<short rev>; tagged releases are built by
-      # GoReleaser. `nix run github:plmercereau/wrekin/v0.1.0` still builds
-      # from the tag's sources, with that tag's revision as the version.
-      version = "0.0.0-${self.shortRev or self.dirtyShortRev or "dev"}";
+      # A flake sees the commit it was fetched at, never the tag. GitHub's
+      # archives, which Nix downloads for `github:` inputs, fill
+      # nix/describe.txt in with `git describe` (export-subst, .gitattributes):
+      # "v0.2.4" at a tag, "v0.2.4-3-g<rev>" after one. A local checkout or a
+      # `git+` fetch keeps the placeholder: 0.0.0-<short rev>.
+      describe = lib.trim (builtins.readFile ./nix/describe.txt);
+      afterTag = builtins.match "v(.+)-([0-9]+)-g([0-9a-f]{7})[0-9a-f]*" describe;
+      atTag = builtins.match "v([0-9].*)" describe;
+      version =
+        if afterTag != null then
+          "${builtins.elemAt afterTag 0}-${builtins.elemAt afterTag 1}-g${builtins.elemAt afterTag 2}"
+        else if atTag != null then
+          builtins.elemAt atTag 0
+        else
+          "0.0.0-${self.shortRev or self.dirtyShortRev or "dev"}";
 
       mkWrekin = pkgs: pkgs.callPackage ./nix/package.nix { inherit version; };
 
