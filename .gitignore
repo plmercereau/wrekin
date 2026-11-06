@@ -1,17 +1,28 @@
 # Go
-/dist/
 /wrekin
+/dist/
 *.test
-# Node / Bun
+*.out
+
+# Nix
+/result
+/result-*
+.direnv/
+
+# Worker (cloud/)
 node_modules/
 cloud/.wrangler/
 cloud/.dev.vars
-# Nix
-result
-result-*
-# Local worktrees used while developing the tracks in parallel
-/.worktrees/
-# Editors
+cloud/dist/
+
+# Local runs (see CONTRIBUTING.md)
+/.local/
+
+# Editors and OS
 .DS_Store
 .idea/
 .vscode/
+*.swp
+
+# git worktrees used during development
+/.worktrees/
