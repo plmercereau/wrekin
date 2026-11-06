@@ -20,6 +20,8 @@ func LaunchdPlist(spec Spec, logPath string) string {
 		_ = xml.EscapeText(&b, []byte(s))
 		return b.String()
 	}
+	// AbandonProcessGroup: the teleported sessions live in a tmux server the
+	// daemon starts; launchd must not take it down with the daemon.
 	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -39,6 +41,8 @@ func LaunchdPlist(spec Spec, logPath string) string {
 	<key>RunAtLoad</key>
 	<true/>
 	<key>KeepAlive</key>
+	<true/>
+	<key>AbandonProcessGroup</key>
 	<true/>
 	<key>StandardOutPath</key>
 	<string>%s</string>

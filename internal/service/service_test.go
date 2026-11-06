@@ -14,6 +14,9 @@ func TestSystemdUnitContent(t *testing.T) {
 		"ExecStart=/usr/local/bin/wrekin daemon",
 		`Environment="PATH=/home/me/.local/bin:/usr/bin:/bin"`,
 		"Restart=on-failure",
+		// The tmux server of the teleported sessions is in this unit's
+		// control group; probed on fennec, the default kills it on restart.
+		"KillMode=process",
 		"WantedBy=default.target",
 	} {
 		if !strings.Contains(unit, want) {
@@ -35,6 +38,7 @@ func TestLaunchdPlistContent(t *testing.T) {
 		"<key>ProgramArguments</key>", "<string>/opt/homebrew/bin/wrekin</string>", "<string>daemon</string>",
 		"<key>RunAtLoad</key>", "<true/>",
 		"<key>KeepAlive</key>",
+		"<key>AbandonProcessGroup</key>",
 		"<key>StandardOutPath</key>", "<string>/Users/me/.local/state/wrekin/launchd.log</string>",
 	} {
 		if !strings.Contains(plist, want) {
