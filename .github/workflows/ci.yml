@@ -11,6 +11,8 @@ concurrency:
 
 permissions:
   contents: read
+  # The Go job comments the failing output on the pull request.
+  pull-requests: write
 
 jobs:
   go:
@@ -26,12 +28,23 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Install tmux (Linux)
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y tmux
-      - name: Install tmux (macOS)
-        if: runner.os == 'macOS'
-        run: brew install tmux
+      - name: Install tmux
+        # `brew install` of a formula the image already has exits non-zero, and
+        # the apt step can fail on a transient mirror: install only when the
+        # binary is missing, and keep the output for the failure report below.
+        shell: bash
+        run: |
+          set -o pipefail
+          {
+            if command -v tmux >/dev/null 2>&1; then
+              echo "tmux already installed"
+            elif [ "$RUNNER_OS" = Linux ]; then
+              sudo apt-get update -qq && sudo apt-get install -y -qq tmux
+            else
+              brew install tmux
+            fi
+            tmux -V
+          } 2>&1 | tee ci-tmux.log
       - name: gofmt
         run: |
           files="$(gofmt -l .)"
@@ -43,7 +56,27 @@ jobs:
       - name: go vet
         run: go vet ./...
       - name: go test
-        run: go test -race ./...
+        shell: bash
+        run: |
+          set -o pipefail
+          go test -race ./... 2>&1 | tee ci-go-test.log
+      - name: Report the failure on the pull request
+        # The job logs are not readable without repository admin rights; the
+        # tail of the failing output on the pull request is.
+        if: failure() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo "**Go (${{ matrix.os }}) failed.** Last lines of the tmux install and of \`go test\`:"
+            echo
+            echo '```'
+            tail -n 20 ci-tmux.log 2>/dev/null || echo "(no tmux log)"
+            echo '--- go test ---'
+            tail -n 120 ci-go-test.log 2>/dev/null || echo "(no go test log: an earlier step failed)"
+            echo '```'
+          } > ci-comment.md
+          gh pr comment ${{ github.event.pull_request.number }} --body-file ci-comment.md
 
   cloud:
     name: Cloud (Worker)
