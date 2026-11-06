@@ -63,10 +63,11 @@ export function describeJob(job: Job, nodeName: string): string {
       }${job.attention?.proposedPath ? ` It would be cloned to ${job.attention.proposedPath}.` : ""} Ask the user whether to go ahead, then call approve_repository with approved true or false.`;
     case "ready": {
       const remote = job.session?.remoteControl;
+      const url = job.session?.remoteControlUrl;
       const attach = remote
-        ? ` It runs under Remote Control: the user continues it from claude.ai/code or the Claude app, where it is listed as "${remote}"${
+        ? ` It runs under Remote Control: the user continues it ${url ? `at ${url}, ` : ""}from claude.ai/code or the Claude app, where it is listed as "${remote}"${
             job.session?.attach ? `, or on ${nodeName} itself with \`${job.session.attach}\`` : ""
-          }.`
+          }.${url ? " Give the user that link." : ""}`
         : job.session?.attach
           ? ` The user opens it on ${nodeName} with \`${job.session.attach}\`.`
           : "";

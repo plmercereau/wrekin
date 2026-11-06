@@ -8,19 +8,17 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/plmercereau/wrekin/internal/harness"
 )
 
 func TestLaunchArgs(t *testing.T) {
 	c := New(filepath.Join(t.TempDir(), ".claude.json"), "/opt/bin/claude")
-	got := c.LaunchArgs("session_01CN", harness.LaunchOptions{})
+	got := c.LaunchArgs("session_01CN")
 	want := []string{"/opt/bin/claude", "--teleport", "session_01CN"}
 	if strings.Join(got, " ") != strings.Join(want, " ") {
 		t.Errorf("LaunchArgs = %v, want %v", got, want)
 	}
 	for _, bad := range []string{"--dangerously-skip-permissions", "-r", "", "session_01 CN", "abc", "session_x;rm"} {
-		if got := c.LaunchArgs(bad, harness.LaunchOptions{}); got != nil {
+		if got := c.LaunchArgs(bad); got != nil {
 			t.Errorf("LaunchArgs(%q) = %v, want nil: a flag-shaped id must never reach the harness", bad, got)
 		}
 	}
@@ -87,7 +85,7 @@ func TestDetectParsesVersion(t *testing.T) {
 	if !info.Available || info.Version != "2.1.318" {
 		t.Errorf("info = %+v", info)
 	}
-	if got := c.LaunchArgs("session_s", harness.LaunchOptions{})[0]; got != fake {
+	if got := c.LaunchArgs("session_s")[0]; got != fake {
 		t.Errorf("LaunchArgs binary = %q, want the resolved %q", got, fake)
 	}
 }
@@ -132,39 +130,57 @@ func TestSetupScreenNamesWhatClaudeWaitsOn(t *testing.T) {
 	}
 }
 
-func TestLaunchArgsWithRemoteControl(t *testing.T) {
-	c := New("", "/opt/bin/claude")
-	got := c.LaunchArgs("session_01CN", harness.LaunchOptions{RemoteControl: "fennec wrekin-ydncipcr"})
-	want := []string{"/opt/bin/claude", "--teleport", "session_01CN", "--remote-control", "fennec wrekin-ydncipcr"}
-	if strings.Join(got, "|") != strings.Join(want, "|") {
-		t.Errorf("argv = %q, want %q", got, want)
+func TestRemoteControlCommand(t *testing.T) {
+	c := New("", "claude")
+	if got := c.RemoteControlCommand("fennec wrekin-ydncipcr"); got != "/remote-control fennec wrekin-ydncipcr" {
+		t.Errorf("command = %q", got)
 	}
-	// --remote-control takes an optional value: a name shaped like a flag would be read as one.
-	for _, bad := range []string{"--dangerously-skip-permissions", "-x", " lead", "a;b", ""} {
-		args := c.LaunchArgs("session_01CN", harness.LaunchOptions{RemoteControl: bad})
-		if bad == "" {
-			if len(args) != 3 {
-				t.Errorf("no name must mean no remote control: %q", args)
-			}
-			continue
-		}
-		if args != nil {
-			t.Errorf("name %q accepted: %q", bad, args)
+	for _, bad := range []string{"", "-x", " lead", "a;b", "line\nbreak", "/clear"} {
+		if got := c.RemoteControlCommand(bad); got != "" {
+			t.Errorf("name %q gave %q", bad, got)
 		}
 	}
 }
 
-func TestRemoteControlActiveReadsTheStatusLine(t *testing.T) {
+func TestRemoteControlReadsThePane(t *testing.T) {
 	c := New("", "claude")
-	// The bottom of a Claude Code 2.1.177 pane once /remote-control is on, captured on fennec.
-	pane := "────────\n❯ \n────────\n  ? for shortcuts · ← for agents      Now using usage credits\n                    ● high · /effort\n                          /rc active"
-	if !c.RemoteControlActive(pane) {
-		t.Error("/rc active not recognised")
+	// Claude Code 2.1.316 after `/remote-control fennec wrekin-probe`, captured on a node.
+	pane := "❯ /remote-control fennec wrekin-probe\n  /remote-control is active · Continue here, on your phone, or at https://claude.ai/code/session_01CNrG8QJt54sDmUPtixP7Pa\n────────\n❯ \n────────\n  ⏵⏵ auto mode on (shift+tab to cycle)\n                          /rc active"
+	if active, url := c.RemoteControl(pane); !active || url != "https://claude.ai/code/session_01CNrG8QJt54sDmUPtixP7Pa" {
+		t.Errorf("RemoteControl = %v, %q", active, url)
 	}
-	if c.RemoteControlActive("────────\n❯ \n────────\n  ? for shortcuts") {
+	// 2.1.177 turned on from the menu: the status line, no URL.
+	if active, url := c.RemoteControl("────────\n❯ \n────────\n  ? for shortcuts\n      /rc active"); !active || url != "" {
+		t.Errorf("status line only = %v, %q", active, url)
+	}
+	if active, _ := c.RemoteControl("────────\n❯ \n────────\n  ? for shortcuts"); active {
 		t.Error("a pane without it reported active")
 	}
 	if got := c.SetupScreen(" Remote Control\n   ❯ 1. Enable Remote Control  Opens a secure connection to claude.ai."); got != "the Remote Control consent" {
 		t.Errorf("consent screen = %q", got)
+	}
+}
+
+func TestInputIdleOnlyForTheBareInputBox(t *testing.T) {
+	c := New("", "claude")
+	idle := []string{
+		"● Session resumed\n────────────\n❯ \n────────────\n  ? for shortcuts · ← for agents",
+		"────────────\n❯ Try \"fix typecheck errors\"\n────────────\n  ? for shortcuts",
+	}
+	for _, pane := range idle {
+		if !c.InputIdle(pane) {
+			t.Errorf("not idle:\n%s", pane)
+		}
+	}
+	busy := []string{
+		// The upsell captured on fennec over a teleported session: typing would answer it.
+		"❯ téléporte cette session avec wrekin\n● Session resumed without branch\n────────────\n  Try the new fullscreen renderer?\n  ❯ 1. Yes, try it\n    2. Not now\n  Enter to confirm · Esc to cancel",
+		" Choose the text style\n ❯ 2. Dark mode ✔\n   3. Light mode",
+		"starting...",
+	}
+	for _, pane := range busy {
+		if c.InputIdle(pane) {
+			t.Errorf("idle:\n%s", pane)
+		}
 	}
 }

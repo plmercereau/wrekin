@@ -186,7 +186,13 @@ describe("MCP tools", () => {
     hub.answer(mine.id, "get_teleport_status", {
       ok: true,
       data: readyJob({
-        session: { terminal: "tmux", name: "wrekin-01CN", attach: "wrekin attach wrekin-01CN", remoteControl: "workstation wrekin-01CN" },
+        session: {
+          terminal: "tmux",
+          name: "wrekin-01CN",
+          attach: "wrekin attach wrekin-01CN",
+          remoteControl: "workstation wrekin-01CN",
+          remoteControlUrl: "https://claude.ai/code/session_01RC",
+        },
         ready: { confirmed: true, detail: "prompt visible, Remote Control active" },
       }),
     });
@@ -194,6 +200,7 @@ describe("MCP tools", () => {
     expect(text).toContain('listed as "workstation wrekin-01CN"');
     expect(text).toContain("claude.ai/code");
     expect(text).toContain("switch to the Remote Control session");
+    expect(text).toContain("at https://claude.ai/code/session_01RC");
   });
 
   it("approve_repository passes the decision through and reports a node error", async () => {

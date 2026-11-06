@@ -621,14 +621,15 @@ func TestLaunchReportsASetupScreenInsteadOfReady(t *testing.T) {
 	}
 }
 
-// With Remote Control on, the session starts under it, named after the node
-// and the session, and is confirmed once the harness reports it active.
-func TestLaunchUnderRemoteControl(t *testing.T) {
+// With Remote Control on, the runner types the harness's command once the
+// input box is bare, under "<node> <session>", and reports the session's
+// claude.ai URL once the harness prints it.
+func TestLaunchTurnsRemoteControlOn(t *testing.T) {
 	requireGit(t)
 	e := newEnv(t, func(d *RunnerDeps) {
 		d.RemoteControl = true
 		d.NodeName = "fennec"
-		d.RemoteControlGrace = 300 * time.Millisecond
+		d.RemoteControlGrace = 2 * time.Second
 	})
 	checkout := filepath.Join(e.root, "wrekin")
 	initRepo(t, checkout, "git@github.com:plmercereau/wrekin.git")
@@ -639,22 +640,36 @@ func TestLaunchUnderRemoteControl(t *testing.T) {
 		t.Fatal(jerr)
 	}
 	launched := e.waitLaunched(1)
-	wantName := "fennec " + launched.session
-	if strings.Join(launched.argv, " ") != "claude --teleport "+sessionID(12)+" --remote-control "+wantName {
-		t.Errorf("argv %q", launched.argv)
+	if strings.Join(launched.argv, " ") != "claude --teleport "+sessionID(12) {
+		t.Errorf("argv %q: remote control is not a launch flag", launched.argv)
 	}
-	e.term.setPane(launched.session, "READY\nRC-ON")
+	// A dialog in front of the prompt: nothing may be typed.
+	e.term.setPane(launched.session, "READY\nan upsell dialog")
+	time.Sleep(150 * time.Millisecond)
+	if sent := e.term.sentLines(); len(sent) != 0 {
+		t.Fatalf("typed into a dialog: %q", sent)
+	}
+	e.term.setPane(launched.session, "READY IDLE")
+	wantName := "fennec " + launched.session
+	deadline := time.Now().Add(2 * time.Second)
+	for len(e.term.sentLines()) == 0 && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	if sent := e.term.sentLines(); len(sent) != 1 || sent[0] != launched.session+": /remote-control "+wantName {
+		t.Fatalf("sent %q", sent)
+	}
+	e.term.setPane(launched.session, "READY IDLE RC-ON https://claude.ai/code/session_01RC")
 	j := e.waitState(job.ID, protocol.StateReady)
 	if j.Ready == nil || !j.Ready.Confirmed || !strings.Contains(j.Ready.Detail, "Remote Control active") {
 		t.Errorf("ready = %+v", j.Ready)
 	}
-	if j.Session == nil || j.Session.RemoteControl != wantName {
+	if j.Session == nil || j.Session.RemoteControl != wantName || j.Session.RemoteControlURL != "https://claude.ai/code/session_01RC" {
 		t.Errorf("session = %+v", j.Session)
 	}
 }
 
-// A prompt without remote control after the grace is still ready, and says
-// how to turn it on.
+// When remote control does not come up, the session is still ready, without
+// a Remote Control name, and the detail says how to turn it on.
 func TestLaunchSaysWhenRemoteControlDoesNotComeUp(t *testing.T) {
 	requireGit(t)
 	e := newEnv(t, func(d *RunnerDeps) {
@@ -670,14 +685,14 @@ func TestLaunchSaysWhenRemoteControlDoesNotComeUp(t *testing.T) {
 		t.Fatal(jerr)
 	}
 	launched := e.waitLaunched(1)
-	// A node name the harness refuses falls back to the session's own name.
-	if launched.argv[len(launched.argv)-1] != launched.session {
-		t.Errorf("argv %q", launched.argv)
-	}
-	e.term.setPane(launched.session, "READY")
+	e.term.setPane(launched.session, "READY IDLE")
 	j := e.waitState(job.ID, protocol.StateReady)
-	if j.Ready == nil || !strings.Contains(j.Ready.Detail, "/remote-control") {
-		t.Errorf("ready = %+v", j.Ready)
+	// A node name the harness refuses falls back to the session's own name.
+	if sent := e.term.sentLines(); len(sent) != 1 || sent[0] != launched.session+": /remote-control "+launched.session {
+		t.Errorf("sent %q", sent)
+	}
+	if j.Ready == nil || !strings.Contains(j.Ready.Detail, "/remote-control") || j.Session.RemoteControl != "" {
+		t.Errorf("ready = %+v, session = %+v", j.Ready, j.Session)
 	}
 }
 

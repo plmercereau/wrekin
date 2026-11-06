@@ -695,18 +695,22 @@ func (r *Runner) launch(job *Job) {
 		r.deps.Logger.Warn("stale session killed before launch", "job", job.ID, "session", session)
 		_ = r.deps.Term.Kill(session)
 	}
-	opts := harness.LaunchOptions{}
+	// Remote control is turned on once the session is up, by typing the
+	// harness's command into it, under "<node> <session>" (or the session's
+	// name alone when the harness refuses the node's).
+	rcName, rcCommand := "", ""
 	if r.deps.RemoteControl {
-		opts.RemoteControl = strings.TrimSpace(r.deps.NodeName + " " + session)
-		// A node name the harness refuses as a name falls back to the session's.
-		if r.deps.Harness.LaunchArgs(job.CloudSessionID, opts) == nil {
-			opts.RemoteControl = session
+		for _, name := range []string{strings.TrimSpace(r.deps.NodeName + " " + session), session} {
+			if cmd := r.deps.Harness.RemoteControlCommand(name); cmd != "" {
+				rcName, rcCommand = name, cmd
+				break
+			}
 		}
 	}
-	job.Session = &protocol.Session{Terminal: r.deps.Term.Name(), Name: session, Attach: "wrekin attach " + session, RemoteControl: opts.RemoteControl}
+	job.Session = &protocol.Session{Terminal: r.deps.Term.Name(), Name: session, Attach: "wrekin attach " + session, RemoteControl: rcName}
 	r.save(job, protocol.StateLaunching)
 
-	argv := r.deps.Harness.LaunchArgs(job.CloudSessionID, opts)
+	argv := r.deps.Harness.LaunchArgs(job.CloudSessionID)
 	if len(argv) == 0 {
 		r.fail(job, protocol.CodeInvalidParams, "the harness refused the session id", nil)
 		return
@@ -720,6 +724,7 @@ func (r *Runner) launch(job *Job) {
 	pattern := r.deps.Harness.ReadyPattern()
 	stoppedPolls := 0
 	var promptSince time.Time
+	rcSent := false
 	for {
 		exists, _ := r.deps.Term.Exists(session)
 		running := false
@@ -754,18 +759,38 @@ func (r *Runner) launch(job *Job) {
 			}
 			if pattern.MatchString(pane) {
 				var ready *protocol.Ready
+				active, url := false, ""
+				if rcCommand != "" {
+					active, url = r.deps.Harness.RemoteControl(pane)
+				}
 				switch {
-				case opts.RemoteControl == "":
+				case rcCommand == "":
 					ready = &protocol.Ready{Confirmed: true, Detail: "prompt visible"}
-				case r.deps.Harness.RemoteControlActive(pane):
+				case active && (url != "" || rcSent && time.Since(promptSince) >= r.deps.RemoteControlGrace):
+					job.Session.RemoteControlURL = url
 					ready = &protocol.Ready{Confirmed: true, Detail: "prompt visible, Remote Control active"}
 				default:
-					// Remote control connects a moment after the prompt shows.
 					if promptSince.IsZero() {
 						promptSince = time.Now()
 					}
+					// Typed only into the bare input box: a dialog in front of it
+					// (an upsell, a tip) would take the line as its answer.
+					if !rcSent && r.deps.Harness.InputIdle(pane) {
+						if err := r.deps.Term.SendLine(session, rcCommand); err != nil {
+							r.deps.Logger.Warn("remote control command not sent", "job", job.ID, "err", err)
+						} else {
+							r.deps.Logger.Info("remote control requested", "job", job.ID, "name", rcName)
+						}
+						rcSent = true
+						promptSince = time.Now()
+					}
 					if time.Since(promptSince) >= r.deps.RemoteControlGrace || !time.Now().Before(deadline) {
-						ready = &protocol.Ready{Confirmed: true, Detail: "prompt visible, but Remote Control was not seen active: attach and run /remote-control there"}
+						job.Session.RemoteControl = ""
+						why := "it did not come up"
+						if !rcSent {
+							why = "a dialog stayed in front of the input"
+						}
+						ready = &protocol.Ready{Confirmed: true, Detail: fmt.Sprintf("prompt visible, but Remote Control is off (%s): attach with `%s` and run /remote-control there", why, job.Session.Attach)}
 					}
 				}
 				if ready != nil {

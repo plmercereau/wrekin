@@ -144,20 +144,15 @@ func parseVersion(out string) string {
 // them): only ids of this shape are ever placed after it.
 var cloudSessionIDRe = regexp.MustCompile(`^session_[A-Za-z0-9]{1,190}$`)
 
-// remoteControlNameRe bounds the Remote Control name: like an id after
-// --teleport, it follows an option with an optional value and must never
-// look like a flag.
-var remoteControlNameRe = regexp.MustCompile(`^[\p{L}\p{N}][\p{L}\p{N} ._-]{0,79}$`)
-
 // LaunchArgs implements harness.Harness. The binary is the absolute path
 // found by Detect when available, so launches do not depend on the PATH of
-// the terminal's shell. It returns nil for an id that is not a session id or
-// a Remote Control name that could be read as a flag.
-func (c *Claude) LaunchArgs(cloudSessionID string, opts harness.LaunchOptions) []string {
+// the terminal's shell. It returns nil for an id that is not a session id.
+//
+// Remote control is not asked for here: Claude Code (2.1.177 and 2.1.316,
+// probed on a node) ignores --remote-control next to --teleport. It is
+// turned on once the session is up, with RemoteControlCommand.
+func (c *Claude) LaunchArgs(cloudSessionID string) []string {
 	if !cloudSessionIDRe.MatchString(cloudSessionID) {
-		return nil
-	}
-	if opts.RemoteControl != "" && !remoteControlNameRe.MatchString(opts.RemoteControl) {
 		return nil
 	}
 	c.mu.Lock()
@@ -166,19 +161,67 @@ func (c *Claude) LaunchArgs(cloudSessionID string, opts harness.LaunchOptions) [
 	if bin == "" {
 		bin = c.binary
 	}
-	argv := []string{bin, "--teleport", cloudSessionID}
-	if opts.RemoteControl != "" {
-		argv = append(argv, "--remote-control", opts.RemoteControl)
-	}
-	return argv
+	return []string{bin, "--teleport", cloudSessionID}
 }
 
-// remoteControlActive is the status line of a session under Remote Control
-// (Claude Code 2.1.177: "/rc active" at the bottom right).
-var remoteControlActive = regexp.MustCompile(`/rc active|Remote Control active`)
+// remoteControlNameRe bounds the Remote Control name typed into the session:
+// words, nothing the input box could read as anything else.
+var remoteControlNameRe = regexp.MustCompile(`^[\p{L}\p{N}][\p{L}\p{N} ._-]{0,79}$`)
 
-// RemoteControlActive implements harness.Harness.
-func (c *Claude) RemoteControlActive(pane string) bool { return remoteControlActive.MatchString(pane) }
+// RemoteControlCommand implements harness.Harness with Claude Code's
+// /remote-control, which takes the session's name and, once its consent has
+// been given (remoteDialogSeen), turns Remote Control on at once.
+func (c *Claude) RemoteControlCommand(name string) string {
+	if !remoteControlNameRe.MatchString(name) {
+		return ""
+	}
+	return "/remote-control " + name
+}
+
+// The status line of a session under Remote Control ("/rc active", bottom
+// right) and the line /remote-control prints: "/remote-control is active ·
+// Continue here, on your phone, or at https://claude.ai/code/session_…".
+var (
+	remoteControlActive = regexp.MustCompile(`/rc active|/remote-control is active|Remote Control active`)
+	remoteControlURL    = regexp.MustCompile(`https://claude\.ai/code/session_[A-Za-z0-9]+`)
+)
+
+// RemoteControl implements harness.Harness. The URL is the last one printed,
+// the current session's.
+func (c *Claude) RemoteControl(pane string) (bool, string) {
+	if !remoteControlActive.MatchString(pane) {
+		return false, ""
+	}
+	urls := remoteControlURL.FindAllString(pane, -1)
+	if len(urls) == 0 {
+		return true, ""
+	}
+	return true, urls[len(urls)-1]
+}
+
+// InputIdle implements harness.Harness. Claude Code draws its input box as a
+// "❯" line between two horizontal rules; a dialog in front of it (an
+// upsell, a menu) replaces that line with its own content, where "❯" marks
+// a numbered choice. Typing into a dialog would answer it, so only the bare
+// box counts.
+func (c *Claude) InputIdle(pane string) bool {
+	lines := strings.Split(strings.TrimRight(pane, "\n"), "\n")
+	for i := len(lines) - 2; i >= 1; i-- {
+		line := strings.TrimSpace(lines[i])
+		if !strings.HasPrefix(line, "❯") || menuLine.MatchString(line) {
+			continue
+		}
+		return isRule(lines[i-1]) && isRule(lines[i+1])
+	}
+	return false
+}
+
+var menuLine = regexp.MustCompile(`^❯\s*\d+\.`)
+
+func isRule(line string) bool {
+	line = strings.TrimSpace(line)
+	return line != "" && strings.Trim(line, "─") == ""
+}
 
 // readyPattern matches the Claude Code input prompt: the shortcuts hint
 // under the input box, or a line that starts (inside the box's border, if

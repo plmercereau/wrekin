@@ -154,7 +154,7 @@ Params: `{}`. Result: `{ "at": "<RFC 3339>" }`. For diagnostics only.
   "state": "ready",
   "repository": { "input": "plmercereau/wrekin", "url": "https://github.com/plmercereau/wrekin", "name": "wrekin" },
   "workdir": "/home/me/projects/wrekin/.claude/worktrees/wrekin-01CN",
-  "session": { "terminal": "tmux", "name": "wrekin-01CN", "attach": "wrekin attach wrekin-01CN", "remoteControl": "workstation wrekin-01CN" },
+  "session": { "terminal": "tmux", "name": "wrekin-01CN", "attach": "wrekin attach wrekin-01CN", "remoteControl": "workstation wrekin-01CN", "remoteControlUrl": "https://claude.ai/code/session_01RC…" },
   "attention": null,
   "ready": { "confirmed": true, "detail": "prompt visible, Remote Control active" },
   "error": null,
@@ -170,8 +170,9 @@ Params: `{}`. Result: `{ "at": "<RFC 3339>" }`. For diagnostics only.
   `{ "kind": "approve_repository", "message": "…", "repositoryUrl": "…", "proposedPath": "…" }`.
 - `session.remoteControl`, optional, is the name the session is listed
   under in claude.ai/code and the Claude app when the node started it with
-  Remote Control (`teleport.remoteControl`); absent otherwise. A relay that
-  predates the field ignores it.
+  Remote Control (`teleport.remoteControl`); absent otherwise.
+  `session.remoteControlUrl`, optional, opens that session on claude.ai, as
+  the harness printed it. A relay that predates the fields ignores them.
 - `ready.confirmed` is `false` when the harness is still running after the
   readiness timeout but the prompt was never seen, or when the pane shows
   one of the harness's own setup screens (first run, sign-in, trust,

@@ -241,6 +241,9 @@ type Session struct {
 	// RemoteControl is the name the session is listed under in
 	// claude.ai/code and the Claude app when it runs with Remote Control.
 	RemoteControl string `json:"remoteControl,omitempty"`
+	// RemoteControlURL opens that session on claude.ai, as the harness
+	// printed it once Remote Control was on.
+	RemoteControlURL string `json:"remoteControlUrl,omitempty"`
 }
 
 // AttentionApproveRepository is the only attention kind in the MVP.

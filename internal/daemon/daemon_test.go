@@ -202,6 +202,7 @@ func (fakeTerm) Available() error                                       { return
 func (fakeTerm) Launch(context.Context, string, string, []string) error { return nil }
 func (fakeTerm) Exists(string) (bool, error)                            { return false, nil }
 func (fakeTerm) Running(string) (bool, error)                           { return false, nil }
+func (fakeTerm) SendLine(string, string) error                          { return nil }
 func (fakeTerm) Capture(string, int) (string, error)                    { return "", nil }
 func (fakeTerm) Kill(string) error                                      { return nil }
 func (fakeTerm) List(string) ([]string, error)                          { return nil, nil }
