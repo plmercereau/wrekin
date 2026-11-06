@@ -103,11 +103,44 @@ func (c *Claude) Trust(dir string) error {
 		return err
 	}
 	doc.top["projects"] = rawProjects
+	return c.write(doc, existed)
+}
+
+// onboardingKey is set by Claude Code once its first-run screens (the theme
+// choice among them) are done; until then every interactive start shows
+// them, a teleport in a detached terminal included.
+const onboardingKey = "hasCompletedOnboarding"
+
+// CompleteOnboarding sets hasCompletedOnboarding to true, so that Claude Code
+// opens a teleported session instead of its theme picker, which no one
+// answers on a node until the user attaches. It reports whether it changed
+// anything; a missing file is created as Trust does, and the same backup is
+// written first.
+func (c *Claude) CompleteOnboarding() (bool, error) {
+	doc, err := c.read()
+	existed := true
+	if errors.Is(err, fs.ErrNotExist) {
+		existed = false
+		doc, err = &claudeJSON{top: map[string]json.RawMessage{}, projects: map[string]json.RawMessage{}}, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	var done bool
+	if raw, ok := doc.top[onboardingKey]; ok && json.Unmarshal(raw, &done) == nil && done {
+		return false, nil
+	}
+	doc.top[onboardingKey] = json.RawMessage("true")
+	return true, c.write(doc, existed)
+}
+
+// write replaces the file with doc, after a backup of the file it replaces;
+// a file that did not exist is created, with its directory, private.
+func (c *Claude) write(doc *claudeJSON, existed bool) error {
 	out, err := json.MarshalIndent(doc.top, "", "  ")
 	if err != nil {
 		return err
 	}
-
 	if existed {
 		if err := c.backup(); err != nil {
 			return fmt.Errorf("backup %s: %w", c.claudeJSON, err)

@@ -15,6 +15,7 @@ import (
 type claudeSignIn interface {
 	SignedIn(ctx context.Context) (bool, error)
 	Login(ctx context.Context, stdin io.Reader, stdout, stderr io.Writer) error
+	CompleteOnboarding() (bool, error)
 }
 
 func (a *app) claudeHarness() claudeSignIn {
@@ -52,6 +53,7 @@ func ensureClaudeSignedIn(ctx context.Context, a *app, allowLogin bool) {
 		return
 	case signedIn:
 		fmt.Fprintln(a.stdout, "Claude Code is signed in on this machine.")
+		completeOnboarding(a, h)
 		return
 	}
 	if !allowLogin || !a.interactiveStdin() {
@@ -68,4 +70,18 @@ func ensureClaudeSignedIn(ctx context.Context, a *app, allowLogin bool) {
 		return
 	}
 	fmt.Fprintln(a.stdout, "Claude Code is signed in on this machine.")
+	completeOnboarding(a, h)
+}
+
+// completeOnboarding marks Claude Code's first-run screens as done: a
+// teleport starts it in a detached terminal, where its theme picker would
+// wait until the user attached.
+func completeOnboarding(a *app, h claudeSignIn) {
+	changed, err := h.CompleteOnboarding()
+	switch {
+	case err != nil:
+		fmt.Fprintf(a.stdout, "Could not mark Claude Code's first-run setup as done (%v); run `claude` once here and finish it before teleporting.\n", err)
+	case changed:
+		fmt.Fprintln(a.stdout, "Marked Claude Code's first-run setup as done, so a teleport opens the session rather than the theme picker (`/theme` changes it).")
+	}
 }

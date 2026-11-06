@@ -595,3 +595,28 @@ func TestTeleportGoesOnWhenTheSignInStatusIsUnknown(t *testing.T) {
 	}
 	e.waitState(job.ID, protocol.StateNeedsAttention)
 }
+
+// A harness waiting on its own setup screen (Claude Code's first-run theme
+// picker, whose menu marker looks like its prompt) is not ready: the job
+// says what it waits on and how to attach, unconfirmed, and does not wait out
+// the ready timeout.
+func TestLaunchReportsASetupScreenInsteadOfReady(t *testing.T) {
+	requireGit(t)
+	e := newEnv(t, nil)
+	checkout := filepath.Join(e.root, "wrekin")
+	initRepo(t, checkout, "git@github.com:plmercereau/wrekin.git")
+	e.harn.setTrusted(checkout, true)
+	job, jerr := e.runner.Teleport(context.Background(), teleportParams(11, "plmercereau/wrekin"))
+	if jerr != nil {
+		t.Fatal(jerr)
+	}
+	launched := e.waitLaunched(1)
+	e.term.setPane(launched.session, "Choose a theme SETUP\n ❯ READY-looking menu line")
+	j := e.waitState(job.ID, protocol.StateReady)
+	if j.Ready == nil || j.Ready.Confirmed {
+		t.Fatalf("ready = %+v, want unconfirmed", j.Ready)
+	}
+	if !strings.Contains(j.Ready.Detail, "its fake setup") || !strings.Contains(j.Ready.Detail, "wrekin attach "+launched.session) {
+		t.Errorf("detail = %q", j.Ready.Detail)
+	}
+}

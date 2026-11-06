@@ -215,3 +215,34 @@ func TestDefaultClaudeJSONPathFollowsClaudeConfigDir(t *testing.T) {
 		t.Errorf("path = %q", got)
 	}
 }
+
+func TestCompleteOnboardingSetsTheKeyOnceAndKeepsTheRest(t *testing.T) {
+	path := writeSample(t)
+	c := New(path, "claude")
+	changed, err := c.CompleteOnboarding()
+	if err != nil || !changed {
+		t.Fatalf("CompleteOnboarding = %v, %v", changed, err)
+	}
+	var got map[string]any
+	data, _ := os.ReadFile(path)
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["hasCompletedOnboarding"] != true || got["theme"] != "dark" || got["projects"] == nil {
+		t.Errorf("file = %v", got)
+	}
+	if backup, _ := os.ReadFile(path + ".wrekin-backup"); string(backup) != sampleClaudeJSON {
+		t.Error("no backup of the previous file")
+	}
+	if changed, err := c.CompleteOnboarding(); err != nil || changed {
+		t.Errorf("second call = %v, %v, want no change", changed, err)
+	}
+
+	missing := New(filepath.Join(t.TempDir(), ".claude.json"), "claude")
+	if changed, err := missing.CompleteOnboarding(); err != nil || !changed {
+		t.Fatalf("on a missing file = %v, %v", changed, err)
+	}
+	if ok, err := missing.Trusted("/x"); ok || err != nil {
+		t.Errorf("the created file must stay readable: %v, %v", ok, err)
+	}
+}

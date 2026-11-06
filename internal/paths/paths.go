@@ -42,6 +42,14 @@ func LogFile() string { return filepath.Join(StateDir(), "wrekin.log") }
 // SocketFile is the unix socket the CLI uses to talk to the daemon.
 func SocketFile() string { return filepath.Join(StateDir(), "wrekin.sock") }
 
+// TmuxSocket is the socket of the tmux server the teleported sessions run
+// in. The daemon and the CLI name it explicitly: tmux's own default depends
+// on TMUX_TMPDIR, which a login shell often sets (NixOS's programs.tmux sets
+// it to XDG_RUNTIME_DIR) and a systemd or launchd service does not, so the
+// two would talk to different servers and `wrekin attach` would not find
+// the session the daemon started.
+func TmuxSocket() string { return filepath.Join(StateDir(), "tmux.sock") }
+
 // RepositoriesFile holds the repository mappings the daemon learned.
 func RepositoriesFile() string { return filepath.Join(StateDir(), "repositories.json") }
 

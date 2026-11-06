@@ -62,11 +62,14 @@ export function describeJob(job: Job, nodeName: string): string {
         job.attention?.repositoryUrl ? ` Repository: ${job.attention.repositoryUrl}.` : ""
       }${job.attention?.proposedPath ? ` It would be cloned to ${job.attention.proposedPath}.` : ""} Ask the user whether to go ahead, then call approve_repository with approved true or false.`;
     case "ready": {
-      const attach = job.session?.attach ? ` The user can open it with \`${job.session.attach}\`.` : "";
+      const attach = job.session?.attach ? ` The user opens it on ${nodeName} with \`${job.session.attach}\`.` : "";
+      // Users expect the next request to run on the machine; it does not: this conversation stays in the cloud.
+      const handOff =
+        ` From now on the work continues in that terminal on ${nodeName}, not in this conversation: this cloud session keeps running separately, its commands still run in the cloud, and it has no tool to act on ${nodeName}. Tell the user so.`;
       if (job.ready && !job.ready.confirmed) {
-        return `${head} The session is running but could not be verified (${job.ready.detail}).${attach} Tell the user to check it there.`;
+        return `${head} The session is running but could not be verified (${job.ready.detail}).${attach} Tell the user to check it there.${handOff}`;
       }
-      return `${head} The session is live${job.workdir ? ` in ${job.workdir}` : ""}.${attach}`;
+      return `${head} The session is live${job.workdir ? ` in ${job.workdir}` : ""}.${attach}${handOff}`;
     }
     case "failed":
       return `${head} ${job.error ? `${job.error.code}: ${job.error.message}` : "No error detail was given."}${

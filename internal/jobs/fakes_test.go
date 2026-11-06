@@ -177,7 +177,13 @@ func (f *fakeHarness) Trust(dir string) error {
 }
 func (f *fakeHarness) LaunchArgs(id string) []string { return []string{"claude", "--teleport", id} }
 func (f *fakeHarness) ReadyPattern() *regexp.Regexp  { return regexp.MustCompile(`READY`) }
-func (f *fakeHarness) ExitedIsFailure() bool         { return true }
+func (f *fakeHarness) SetupScreen(pane string) string {
+	if strings.Contains(pane, "SETUP") {
+		return "its fake setup"
+	}
+	return ""
+}
+func (f *fakeHarness) ExitedIsFailure() bool { return true }
 
 func (f *fakeHarness) setTrusted(dir string, v bool) {
 	f.mu.Lock()

@@ -39,6 +39,10 @@ type Harness interface {
 	LaunchArgs(cloudSessionID string) []string
 	// ReadyPattern matches the pane once the harness prompt is visible.
 	ReadyPattern() *regexp.Regexp
+	// SetupScreen names the interactive screen the pane shows when the
+	// harness waits on its own setup (first run, sign-in, trust) rather than
+	// opening the session, or "" when it shows none of them.
+	SetupScreen(pane string) string
 	// ExitedIsFailure says whether the harness exiting before readiness is a
 	// failure (true for an interactive harness).
 	ExitedIsFailure() bool
