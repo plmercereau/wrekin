@@ -5,13 +5,14 @@
   "description": "The Wrekin relay: Hono + Better Auth + a per-account Durable Object on Cloudflare Workers",
   "scripts": {
     "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
+    "build": "bun run scripts/render-wrangler.ts",
+    "deploy": "wrangler d1 migrations apply wrekin --remote --config dist/wrangler.json && wrangler deploy --config dist/wrangler.json",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "test:node": "vitest run --config vitest.node.config.ts",
     "db:generate": "bun run scripts/generate-auth-migration.ts",
     "db:migrate:local": "wrangler d1 migrations apply wrekin --local",
-    "db:migrate:remote": "wrangler d1 migrations apply wrekin --remote",
-    "test:node": "vitest run --config vitest.node.config.ts"
+    "db:migrate:remote": "wrangler d1 migrations apply wrekin --remote --config dist/wrangler.json"
   },
   "dependencies": {
     "@better-auth/mcp": "^1.7.18",

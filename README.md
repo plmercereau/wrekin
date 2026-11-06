@@ -202,7 +202,7 @@ protocol/           PROTOCOL.md, the node protocol (normative for both halves)
 nix/                Nix package and Home Manager module (flake.nix at the root)
 packaging/          how releases, Homebrew and the Worker deploy are produced
 docs/               design spec, implementation plan, feasibility notes
-.github/workflows/  ci.yml, release.yml, deploy-cloud.yml
+.github/workflows/  ci.yml, release.yml (the Worker is deployed by Workers Builds, not by Actions)
 ```
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) to run both halves locally.

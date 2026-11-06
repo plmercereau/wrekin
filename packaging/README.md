@@ -64,29 +64,23 @@ branch on every stable release (the `homebrew` job of `release.yml`).
 | Secret | Used by | Purpose |
 |---|---|---|
 | `HOMEBREW_TAP_GITHUB_TOKEN` | `release.yml` | A fine-grained personal access token with *Contents: read and write* on `plmercereau/homebrew-tap` only. The default `GITHUB_TOKEN` cannot push to another repository. |
-| `CLOUDFLARE_API_TOKEN` | `deploy-cloud.yml` | A Cloudflare API token with *Workers Scripts: Edit* and *D1: Edit* on the account that hosts `wrekin.platyplus.io` (the account and zone also need *Workers Routes: Edit* for the custom domain). Used by `wrangler d1 migrations apply` and `wrangler deploy`. |
-| `CLOUDFLARE_ACCOUNT_ID` | `deploy-cloud.yml` | The Cloudflare account id the Worker is deployed to. Not secret in itself, but kept with the token so the workflow has no account-specific value in the repository. |
 
 `GITHUB_TOKEN` is provided by GitHub Actions; `release.yml` asks for
 `contents: write` so it can create the release.
 
-The two Cloudflare secrets live in the `production` environment of the
-repository settings (Settings → Environments → `production`), which is what
-`deploy-cloud.yml` targets; protection rules on that environment (required
-reviewers, branch restriction to `main`) apply to every deploy. The
-Worker's own runtime secrets (`BETTER_AUTH_SECRET`, the GitHub and Google
-OAuth client ids and secrets) are *Wrangler* secrets set once with
-`wrangler secret put`, not GitHub secrets; see `cloud/README.md`.
+The Worker's own runtime secrets (`BETTER_AUTH_SECRET`, the GitHub and
+Google OAuth client ids and secrets) are set in the Cloudflare dashboard on
+the Worker, never in GitHub; see `cloud/README.md`.
 
 ### Deploying the Worker
 
-`.github/workflows/deploy-cloud.yml` runs on every push to `main` that
-touches `cloud/**`, and on demand from the Actions tab (`workflow_dispatch`).
-It installs the dependencies with `bun install --frozen-lockfile`, runs
-`bun run typecheck` and `bun run test`, applies the D1 migrations to the
-remote database (`wrangler d1 migrations apply wrekin --remote`) and then
-`wrangler deploy`. The D1 database and the custom domain are created by the
-`platyplus/infrastructure` repository (OpenTofu), not by this workflow.
+No workflow here deploys the Worker. Cloudflare's Workers Builds is
+connected to this repository and builds `cloud/` on every push to `main`
+(root directory `cloud`, `bun run build`, then `bun run deploy`), with the
+deployment's identity (the D1 database id, the public URL) as build
+variables read from the platyplus/infrastructure stack's outputs. That
+repository's runbook `docs/runbooks/2026-11-wrekin-site.md` sets it up; the
+D1 database, the Worker entity and the custom domain are its stack's.
 
 ## Notes
 

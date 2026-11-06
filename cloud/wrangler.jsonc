@@ -1,6 +1,12 @@
-// Wrangler configuration for the Wrekin relay.
-// The D1 database and the custom domain are created by the platyplus/infrastructure
-// stack; paste the database id below before the first deploy.
+// Wrangler configuration for the Wrekin relay: what belongs to the code.
+//
+// What belongs to a deployment is not here. The D1 database, the Worker
+// entity and the name wrekin.platyplus.io are the platyplus/infrastructure
+// stack's (sites/wrekin/tofu); Workers Builds deploys this directory on every
+// push to main, and `bun run build` (scripts/render-wrangler.ts) writes
+// dist/wrangler.json from this file plus two build variables, the database's
+// id (WREKIN_D1_DATABASE_ID) and the public URL (WREKIN_BASE_URL). The values
+// below for those two are for local development only.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "wrekin",
@@ -8,14 +14,17 @@
   // Latest date supported by the workerd bundled with wrangler 4.158 (1.20261104.1).
   "compatibility_date": "2026-11-04",
   "compatibility_flags": ["nodejs_compat"],
+  // The name is the stack's custom domain, never a workers.dev one.
+  "workers_dev": false,
   "vars": {
-    "BASE_URL": "https://wrekin.platyplus.io"
+    "BASE_URL": "http://localhost:8787"
   },
   "d1_databases": [
     {
       "binding": "DB",
       "database_name": "wrekin",
-      "database_id": "REPLACE_WITH_D1_ID",
+      // Local development key; the real id comes from the build variable.
+      "database_id": "00000000-0000-0000-0000-000000000000",
       "migrations_dir": "migrations"
     }
   ],
@@ -23,6 +32,5 @@
     "bindings": [{ "name": "ACCOUNT_HUB", "class_name": "AccountHub" }]
   },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["AccountHub"] }],
-  "routes": [{ "pattern": "wrekin.platyplus.io", "custom_domain": true }],
   "observability": { "enabled": true }
 }

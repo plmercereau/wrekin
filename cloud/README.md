@@ -23,7 +23,7 @@ src/api/nodes.ts        node registration and signed unregistration
 src/connect.ts          GET /connect: the nodes' WebSocket
 src/pages/              server-rendered pages (hono/html) and their routes
 src/mcp/                McpServer, tools, session id parsing, the /mcp route
-scripts/                the migration generator (runs under Bun, outside the Worker)
+scripts/                the migration generator and the deploy-config renderer (Bun, outside the Worker)
 migrations/             D1 migrations (0001 is generated, 0002 is the node table)
 test/*.test.ts          run inside workerd only (D1, Durable Object, WebSockets)
 test/unit/*.test.ts     pure modules, run both inside workerd and in plain Node
@@ -82,23 +82,43 @@ re-encodes, RFC 8628 style). Sessions can be presented as
 
 ## Deploy
 
-1. Create the D1 database and the custom domain (the platyplus/infrastructure
-   stack does this) and paste the database id into `wrangler.jsonc`.
-2. Set the five secrets:
+Nothing in this directory deploys from a laptop or from GitHub Actions.
+Cloudflare's Workers Builds is connected to this repository and deploys
+`cloud/` on every push to `main`, the way Vercel builds from Git; the
+platyplus/infrastructure stack (`sites/wrekin/tofu`) owns the D1 database,
+the Worker entity and the name `wrekin.platyplus.io`, and its runbook
+(`docs/runbooks/2026-11-wrekin-site.md` there) walks through the first
+deploy.
 
-   ```sh
-   bunx wrangler secret put BETTER_AUTH_SECRET
-   bunx wrangler secret put GITHUB_CLIENT_ID
-   bunx wrangler secret put GITHUB_CLIENT_SECRET
-   bunx wrangler secret put GOOGLE_CLIENT_ID
-   bunx wrangler secret put GOOGLE_CLIENT_SECRET
-   ```
+`wrangler.jsonc` holds what belongs to the code: name, entry point,
+compatibility date and flags, the bindings' names, the Durable Object
+migrations. What belongs to a deployment is not in the repository:
 
-3. `bun run db:migrate:remote`
-4. `bun run deploy`
+| Value | Where it lives | How it reaches wrangler |
+|---|---|---|
+| The D1 database id | the stack (`d1_database_id` output) | build variable `WREKIN_D1_DATABASE_ID` |
+| The public URL (`BASE_URL`) | the stack (`base_url` output) | build variable `WREKIN_BASE_URL` |
+| The name `wrekin.platyplus.io` | the stack's custom domain | not in the config at all (`workers_dev: false`, no `routes`) |
+| The five secrets | the Worker's *Variables and Secrets* in the dashboard | `wrangler deploy` never touches secrets |
 
-`BASE_URL` is a plain variable in `wrangler.jsonc`. The MCP endpoint is
-`<BASE_URL>/mcp`; nodes connect to `wss://<host>/connect`.
+Workers Builds settings: root directory `cloud`, build command `bun run
+build`, deploy command `bun run deploy`, production branch `main`,
+non-production branch builds off. `bun run build`
+(`scripts/render-wrangler.ts`) writes `dist/wrangler.json` from
+`wrangler.jsonc` plus the two build variables and refuses to run without
+them; `bun run deploy` applies the migrations to the remote database and
+deploys, both with `--config dist/wrangler.json`. The values of `BASE_URL`
+and `database_id` committed in `wrangler.jsonc` serve local development
+only.
+
+To rehearse the deploy configuration locally:
+
+```sh
+WREKIN_D1_DATABASE_ID=<uuid> WREKIN_BASE_URL=https://wrekin.platyplus.io bun run build
+cat dist/wrangler.json
+```
+
+The MCP endpoint is `<BASE_URL>/mcp`; nodes connect to `wss://<host>/connect`.
 
 ## What the Worker stores about a node
 
