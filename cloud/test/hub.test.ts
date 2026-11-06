@@ -2,7 +2,7 @@ import { env } from "cloudflare:test";
 import { describe, expect, it } from "vitest";
 import { getDb } from "../src/db/kysely";
 import { KyselyNodeStore } from "../src/db/nodes";
-import { ACCOUNT_ID_HEADER, PUBLIC_KEY_HEADER } from "../src/hub/account-hub";
+import { ACCOUNT_ID_HEADER, PUBLIC_KEY_HEADER } from "../src/hub/headers";
 import { HUB_ORIGIN, hubFor } from "../src/hub/client";
 import { authMessage, closeCodes } from "../src/protocol";
 import { generateNodeKey } from "./helpers/keys";
