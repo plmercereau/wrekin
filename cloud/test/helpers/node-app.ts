@@ -1,4 +1,3 @@
-import { getAuthTables } from "@better-auth/core/db";
 import { memoryAdapter, type MemoryDB } from "better-auth/adapters/memory";
 import { createApp } from "../../src/app";
 import { buildAuth } from "../../src/auth";
@@ -24,18 +23,24 @@ export function fakeEnv(): Env {
   };
 }
 
-/** Better Auth on the memory adapter, with a table for every model of the configuration. */
+/**
+ * Better Auth on the memory adapter. The adapter expects one array per model and
+ * the model list depends on the plugins, so the store creates each array on first
+ * access instead of enumerating the schema.
+ */
 export function memoryAuth(env: Env) {
-  const db: MemoryDB = {};
-  const auth = buildAuth({
+  const tables: MemoryDB = {};
+  const db = new Proxy(tables, {
+    get: (target, key) => (typeof key === "string" ? (target[key] ??= []) : undefined),
+    has: (target, key) => typeof key === "string" && (target[key] ??= []) !== undefined,
+  });
+  return buildAuth({
     baseURL: env.BASE_URL,
     secret: env.BETTER_AUTH_SECRET,
     database: memoryAdapter(db),
     github: { clientId: env.GITHUB_CLIENT_ID, clientSecret: env.GITHUB_CLIENT_SECRET },
     google: { clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET },
   });
-  for (const table of Object.values(getAuthTables(auth.options))) db[table.modelName] ??= [];
-  return auth;
 }
 
 /** The Worker hosted in plain Node: memory auth, an in-memory node store and a fake hub unless overridden. */
