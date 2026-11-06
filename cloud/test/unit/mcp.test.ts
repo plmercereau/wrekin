@@ -24,6 +24,15 @@ describe("parseCloudSessionId", () => {
   ])("%s → %s", (input, expected) => {
     expect(parseCloudSessionId(input)).toBe(expected);
   });
+
+  it("bounds the id at 190 characters after the prefix, as the daemon does", () => {
+    const longest = `session_${"a".repeat(190)}`;
+    expect(parseCloudSessionId(longest)).toBe(longest);
+    expect(parseCloudSessionId(`https://claude.ai/code/${longest}`)).toBe(longest);
+    expect(parseCloudSessionId(`session_${"a".repeat(191)}`)).toBeNull();
+    expect(parseCloudSessionId(`session_${"a".repeat(10_000)}`)).toBeNull();
+    expect(parseCloudSessionId(`https://claude.ai/code/session_${"a".repeat(10_000)}`)).toBeNull();
+  });
 });
 
 const readyJob = (over: Partial<Job> = {}): Job => ({

@@ -1,4 +1,5 @@
-const SESSION_ID = /^session_[A-Za-z0-9]{8,}$/;
+/** `session_` and 8 to 190 alphanumerics: the daemon's bound, so an id the relay accepts is one the node accepts. */
+const SESSION_ID = /^session_[A-Za-z0-9]{8,190}$/;
 
 /**
  * The Claude Code Cloud session id a teleport needs, from the id itself or from the
