@@ -11,13 +11,15 @@ concurrency:
 
 permissions:
   contents: read
-  # The Go job comments the failing output on the pull request.
-  pull-requests: write
 
 jobs:
   go:
     name: Go (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    # Only this job comments on the pull request (the failure report below).
+    permissions:
+      contents: read
+      pull-requests: write
     strategy:
       fail-fast: false
       matrix:
