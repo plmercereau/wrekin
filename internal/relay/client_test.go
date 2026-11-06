@@ -3,6 +3,7 @@ package relay
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -36,12 +37,21 @@ type testClient struct {
 
 func start(t *testing.T, tweak func(*Options)) *testClient {
 	t.Helper()
+	return startWith(t, nil, tweak)
+}
+
+// startWith is start with a hook on the fake relay before the client dials.
+func startWith(t *testing.T, tweakRelay func(*fakeRelay), tweak func(*Options)) *testClient {
+	t.Helper()
 	id, err := identity.Generate("box")
 	if err != nil {
 		t.Fatal(err)
 	}
 	id.NodeID = "node_test"
 	relay := newFakeRelay(t, id)
+	if tweakRelay != nil {
+		tweakRelay(relay)
+	}
 	handler := newRecordingHandler()
 	opts := Options{
 		URL:            "ws://relay.test/connect",
@@ -226,4 +236,55 @@ func TestUnknownCommandTypesAreIgnored(t *testing.T) {
 	}
 	tc.relay.noResultWithin(50 * time.Millisecond)
 	_ = errNotUsed
+}
+
+// The welcome must name this node and, once the identity knows its account,
+// this account: a relay that welcomes another identity is a protocol error
+// and the client never reports Connected.
+func TestWelcomeForAnotherIdentityDisconnects(t *testing.T) {
+	cases := []struct {
+		name, welcomeNode, welcomeAccount, identityAccount string
+		ok                                                 bool
+	}{
+		{"other node", "node_other", "usr_1", "", false},
+		{"other account", "node_test", "usr_other", "usr_1", false},
+		{"same identity", "node_test", "usr_1", "usr_1", true},
+		{"account not yet known", "node_test", "usr_anything", "", true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			tc := startWith(t,
+				func(f *fakeRelay) { f.setWelcome(c.welcomeNode, c.welcomeAccount) },
+				func(o *Options) { o.Identity.AccountID = c.identityAccount })
+			rc := tc.relay.waitConnected(5 * time.Second) // the relay has sent its welcome
+			if c.ok {
+				st := waitStatus(t, tc.client, Connected)
+				if st.AccountID != c.welcomeAccount {
+					t.Errorf("state = %+v", st)
+				}
+				return
+			}
+			select {
+			case <-rc.closed:
+			case <-time.After(5 * time.Second):
+				t.Fatal("the client kept a connection welcomed for another identity")
+			}
+			deadline := time.Now().Add(5 * time.Second)
+			for tc.client.State().LastError == "" && time.Now().Before(deadline) {
+				time.Sleep(5 * time.Millisecond)
+			}
+			st := tc.client.State()
+			if st.Status == Connected || !st.ConnectedSince.IsZero() || !strings.Contains(st.LastError, "identity") {
+				t.Errorf("state after a foreign welcome = %+v", st)
+			}
+			// It never flips to Connected afterwards either.
+			until := time.Now().Add(200 * time.Millisecond)
+			for time.Now().Before(until) {
+				if st := tc.client.State(); st.Status == Connected {
+					t.Fatalf("client reported Connected: %+v", st)
+				}
+				time.Sleep(5 * time.Millisecond)
+			}
+		})
+	}
 }

@@ -274,6 +274,13 @@ func (c *Client) handshake(ctx context.Context, ws *websocket.Conn) (pingSeconds
 	}
 	switch m := msg.(type) {
 	case *protocol.Welcome:
+		// The welcome must name this node and, once pairing recorded it, this
+		// account; anything else is not a connection for this identity.
+		if m.NodeID != c.o.Identity.NodeID || (c.o.Identity.AccountID != "" && m.AccountID != c.o.Identity.AccountID) {
+			c.o.Logger.Error("relay welcomed a different identity", "nodeId", m.NodeID, "accountId", m.AccountID, "wantNodeId", c.o.Identity.NodeID, "wantAccountId", c.o.Identity.AccountID)
+			_ = ws.Close(websocket.StatusProtocolError, "welcome names another identity")
+			return 0, errors.New("protocol error: the relay welcomed a different identity")
+		}
 		if m.PingSeconds <= 0 {
 			m.PingSeconds = 30
 		}

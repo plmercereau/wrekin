@@ -77,8 +77,12 @@ type fakeRelay struct {
 	authFail    bool
 	autoPong    bool
 	pingSeconds int
-	hellos      []protocol.Hello
-	conns       []*relayConn
+	// welcomeNodeID and welcomeAccountID are what the welcome names; empty
+	// means the registered node and "usr_1".
+	welcomeNodeID    string
+	welcomeAccountID string
+	hellos           []protocol.Hello
+	conns            []*relayConn
 
 	connected chan *relayConn
 	results   chan protocol.Result
@@ -146,7 +150,14 @@ func (f *fakeRelay) handle(w http.ResponseWriter, r *http.Request) {
 	f.hellos = append(f.hellos, hello)
 	authFail := f.authFail
 	pingSeconds := f.pingSeconds
+	welcomeNodeID, welcomeAccountID := f.welcomeNodeID, f.welcomeAccountID
 	f.mu.Unlock()
+	if welcomeNodeID == "" {
+		welcomeNodeID = f.nodeID
+	}
+	if welcomeAccountID == "" {
+		welcomeAccountID = "usr_1"
+	}
 
 	nonceBytes := make([]byte, 32)
 	_, _ = rand.Read(nonceBytes)
@@ -164,7 +175,7 @@ func (f *fakeRelay) handle(w http.ResponseWriter, r *http.Request) {
 		_ = ws.Close(websocket.StatusCode(protocol.CloseAuthFailed), "authentication failed")
 		return
 	}
-	if err := writeJSON(ctx, ws, protocol.Welcome{Envelope: protocol.Envelope{V: 1, Type: protocol.TypeWelcome}, AccountID: "usr_1", NodeID: f.nodeID, PingSeconds: pingSeconds}); err != nil {
+	if err := writeJSON(ctx, ws, protocol.Welcome{Envelope: protocol.Envelope{V: 1, Type: protocol.TypeWelcome}, AccountID: welcomeAccountID, NodeID: welcomeNodeID, PingSeconds: pingSeconds}); err != nil {
 		return
 	}
 	f.mu.Lock()
@@ -270,6 +281,14 @@ func (f *fakeRelay) setAuthFail(v bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.authFail = v
+}
+
+// setWelcome makes the relay welcome another identity than the one that
+// authenticated.
+func (f *fakeRelay) setWelcome(nodeID, accountID string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.welcomeNodeID, f.welcomeAccountID = nodeID, accountID
 }
 
 func (f *fakeRelay) setAutoPong(v bool) {
