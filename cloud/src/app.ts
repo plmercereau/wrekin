@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { nodesApi } from "./api/nodes";
 import { connect } from "./connect";
 import type { Env } from "./env";
+import { mcpRoutes } from "./mcp/route";
 import { layoutError, pageRoutes } from "./pages/routes";
 import { servicesFor } from "./services";
 
@@ -61,6 +62,9 @@ export function createApp() {
 
   // The nodes' WebSocket.
   app.get("/connect", connect);
+
+  // The remote MCP server Claude talks to.
+  app.route("/", mcpRoutes());
 
   app.route("/", pageRoutes());
 
