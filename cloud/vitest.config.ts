@@ -1,18 +1,16 @@
-/// <reference types="vite/client" />
 import { cloudflareTest, readD1Migrations } from "@cloudflare/vitest-plugin";
 import { defineConfig } from "vitest/config";
 
-// Every test runs inside workerd with the bindings of wrangler.jsonc (D1, the
-// Durable Object) and the dummy secrets below. Nothing here reaches the network.
+// Every test runs inside workerd against the built Worker (`vite build` first: `bun run test`
+// does both), with the bindings of dist/server/wrangler.json (D1, the Durable Object, the
+// client assets) and the dummy secrets below. Nothing here reaches the network.
 export default defineConfig(async () => {
-  // Web APIs only (no @types/node in this project; vite/client types import.meta.url): the
-  // migrations directory next to this file.
   const migrationsDir = decodeURIComponent(new URL("./migrations", import.meta.url).pathname);
   const migrations = await readD1Migrations(migrationsDir);
   return {
     plugins: [
       cloudflareTest({
-        wrangler: { configPath: "./wrangler.jsonc" },
+        wrangler: { configPath: "./dist/server/wrangler.json" },
         miniflare: {
           bindings: {
             TEST_MIGRATIONS: migrations,

@@ -1,5 +1,5 @@
+import { nodeWorker, TEST_BASE_URL } from "../helpers/node-app";
 import { authSuite } from "../shared/auth-suite";
-import { nodeApp, TEST_BASE_URL } from "../helpers/node-app";
 
-const { fetcher } = nodeApp();
+const { fetcher } = nodeWorker();
 authSuite(fetcher, TEST_BASE_URL);

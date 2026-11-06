@@ -1,5 +1,4 @@
-import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import type { CallToolResult, McpServer } from "@modelcontextprotocol/server";
 import { z } from "zod";
 import type { NodeRecord, NodeStore } from "../db/nodes";
 import type { HubClient, OnlineNode } from "../hub/client";
@@ -107,7 +106,6 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
       title: "List the user's machines",
       description:
         "Lists the machines paired with the user's Wrekin account and whether each is connected right now, with the harnesses it can run. Call this before teleport when the destination is not obvious.",
-      inputSchema: {},
     },
     async () => {
       const [rows, online] = await Promise.all([ctx.nodes.listNodes(ctx.accountId), ctx.hub.online()]);
@@ -137,13 +135,13 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
         "A state of needs_attention means the machine needs the user's confirmation (for example to clone a new repository): ask the user, then call approve_repository. " +
         "A ready job with ready.confirmed false is running but unverified: tell the user to open it with the session.attach command. " +
         "Calling teleport again for the same session returns the existing job; pass relaunch true only when the previous session is gone (error session_gone).",
-      inputSchema: {
+      inputSchema: z.object({
         node: nodeArg,
         session: z.string().min(1).describe("This Claude Code Cloud session: its id (session_…) or its https://claude.ai/code/session_… URL."),
         repository: z.string().min(1).optional().describe("The Git repository the session works on: a URL or owner/name on GitHub. Helps the machine find or clone the checkout."),
         directory: z.string().min(1).optional().describe("A directory on the machine to use, under one of its allowed roots. `~` is expanded there."),
         relaunch: z.boolean().optional().describe("Launch again when the previous session of this job has disappeared (after a session_gone error)."),
-      },
+      }),
     },
     async ({ node, session, repository, directory, relaunch }) => {
       const cloudSessionId = parseCloudSessionId(session);
@@ -167,7 +165,7 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
       title: "Read a teleport job",
       description:
         "Reads the current state of a teleport job on a machine: accepted, preparing, needs_attention, launching, ready or failed, with the tmux session to attach to once ready.",
-      inputSchema: { node: nodeArg, jobId: jobIdArg },
+      inputSchema: z.object({ node: nodeArg, jobId: jobIdArg }),
     },
     async ({ node, jobId }) => nodeJobCommand(ctx, node, "get_teleport_status", { jobId }),
   );
@@ -178,11 +176,11 @@ export function registerTools(server: McpServer, ctx: ToolContext): void {
       title: "Confirm or refuse the use of a new repository",
       description:
         "Answers a job in needs_attention: the machine asked whether it may clone and trust a repository it did not have. Call it only after the user decided. approved false fails the job with not_approved.",
-      inputSchema: {
+      inputSchema: z.object({
         node: nodeArg,
         jobId: jobIdArg,
         approved: z.boolean().describe("The user's decision."),
-      },
+      }),
     },
     async ({ node, jobId, approved }) => nodeJobCommand(ctx, node, "approve_repository", { jobId, approved }),
   );

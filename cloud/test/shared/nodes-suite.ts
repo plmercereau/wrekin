@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { unregisterMessage } from "../../src/api/nodes";
+import { unregisterMessage } from "../../src/nodes/service";
 import { generateNodeKey } from "../helpers/keys";
 import type { Fetcher } from "./auth-suite";
 
 export type SessionFactory = (label: string) => Promise<{ userId: string; headers: Record<string, string> }>;
+
+/** The account's nodes as the bearer of `headers` sees them (`nodes.list`, in-process or over HTTP). */
+export type NodeLister = (headers: Record<string, string>) => Promise<Array<Record<string, unknown>>>;
 
 const json = (body: unknown, headers: Record<string, string> = {}): RequestInit => ({
   method: "POST",
@@ -11,8 +14,11 @@ const json = (body: unknown, headers: Record<string, string> = {}): RequestInit 
   body: JSON.stringify(body),
 });
 
-/** Assertions shared by the plain-Node and the workerd runs of the node registration API. */
-export function nodesSuite(fetcher: Fetcher, newSession: SessionFactory) {
+/**
+ * Assertions shared by the plain-Node and the workerd runs of the node API the Go agent
+ * speaks: `POST /api/nodes` with a session, `POST /api/nodes/unregister` with a signature.
+ */
+export function nodesSuite(fetcher: Fetcher, newSession: SessionFactory, listNodes: NodeLister) {
   describe("node registration", () => {
     it("refuses an anonymous registration", async () => {
       const key = await generateNodeKey();
@@ -32,9 +38,7 @@ export function nodesSuite(fetcher: Fetcher, newSession: SessionFactory) {
       expect(body.nodeId).toMatch(/^node_[a-z2-7]{26}$/);
       expect(body.accountId).toBe(userId);
 
-      const list = await fetcher("/api/nodes", { headers });
-      expect(list.status).toBe(200);
-      const { nodes } = (await list.json()) as { nodes: Array<Record<string, unknown>> };
+      const nodes = await listNodes(headers);
       expect(nodes).toHaveLength(1);
       expect(nodes[0]).toMatchObject({ id: body.nodeId, name: "workstation", online: false, agentVersion: "0.1.0" });
       expect(nodes[0]?.fingerprint).toMatch(/^[0-9a-f]{4}(:[0-9a-f]{4}){3}$/);
@@ -63,17 +67,15 @@ export function nodesSuite(fetcher: Fetcher, newSession: SessionFactory) {
       for (const publicKey of ["not base64!", btoa("short"), btoa("x".repeat(33))]) {
         const res = await fetcher("/api/nodes", json({ name: "k", publicKey }, headers));
         expect(res.status, publicKey).toBe(400);
+        expect(((await res.json()) as { error: string }).error).toBe("invalid_public_key");
       }
     });
 
-    it("removes a node through the session", async () => {
-      const { headers } = await newSession("frank");
-      const created = await fetcher("/api/nodes", json({ name: "gone", publicKey: (await generateNodeKey()).publicKey }, headers));
-      const { nodeId } = (await created.json()) as { nodeId: string };
-      expect((await fetcher(`/api/nodes/${nodeId}`, { method: "DELETE", headers })).status).toBe(204);
-      expect((await fetcher(`/api/nodes/${nodeId}`, { method: "DELETE", headers })).status).toBe(404);
-      const other = await newSession("grace");
-      expect((await fetcher(`/api/nodes/${nodeId}`, { method: "DELETE", headers: other.headers })).status).toBe(404);
+    it("refuses a malformed body with 400 invalid_body", async () => {
+      const { headers } = await newSession("eve");
+      const res = await fetcher("/api/nodes", json({ name: "" }, headers));
+      expect(res.status).toBe(400);
+      expect(((await res.json()) as { error: string }).error).toBe("invalid_body");
     });
   });
 
@@ -92,8 +94,7 @@ export function nodesSuite(fetcher: Fetcher, newSession: SessionFactory) {
       const signature = await key.sign(unregisterMessage(nodeId, timestamp));
       const res = await fetcher("/api/nodes/unregister", json({ nodeId, timestamp, signature }));
       expect(res.status).toBe(204);
-      const list = (await (await fetcher("/api/nodes", { headers })).json()) as { nodes: unknown[] };
-      expect(list.nodes).toHaveLength(0);
+      expect(await listNodes(headers)).toHaveLength(0);
     });
 
     it("accepts Unix seconds as the timestamp", async () => {
@@ -127,6 +128,33 @@ export function nodesSuite(fetcher: Fetcher, newSession: SessionFactory) {
       const timestamp = new Date().toISOString();
       const signature = await key.sign(unregisterMessage("node_nope", timestamp));
       expect((await fetcher("/api/nodes/unregister", json({ nodeId: "node_nope", timestamp, signature }))).status).toBe(404);
+    });
+  });
+
+  describe("/connect", () => {
+    it("requires a WebSocket upgrade", async () => {
+      expect((await fetcher("/connect?node=node_x")).status).toBe(426);
+    });
+
+    it("answers 404 for an unknown node", async () => {
+      const res = await fetcher("/connect?node=node_unknown", { headers: { Upgrade: "websocket" } });
+      expect(res.status).toBe(404);
+      expect(await res.text()).toBe("unknown node");
+    });
+
+    it("answers 400 without a node id", async () => {
+      expect((await fetcher("/connect", { headers: { Upgrade: "websocket" } })).status).toBe(400);
+    });
+  });
+
+  describe("JSON errors for machine clients", () => {
+    it("answers 404 as JSON under /api and /mcp", async () => {
+      for (const path of ["/api/nothing", "/mcp/nothing"]) {
+        const res = await fetcher(path);
+        expect(res.status, path).toBe(404);
+        expect(res.headers.get("content-type"), path).toContain("application/json");
+        expect(((await res.json()) as { error: string }).error).toBe("not_found");
+      }
     });
   });
 }

@@ -1,15 +1,5 @@
-import { html, raw } from "hono/html";
-import type { HtmlEscapedString } from "hono/utils/html";
-
-export type PageOptions = {
-  title: string;
-  /** Shown in the header when the visitor is signed in. */
-  user?: { name: string } | null;
-  /** Inline script for the page's buttons; no framework, no external asset. */
-  script?: string;
-};
-
-const css = `
+/** One stylesheet for every page, inlined by the root route: mobile-first (the device page is opened from a phone), dark-mode aware, no external asset. */
+export const css = `
 :root { color-scheme: light dark; --bg: #fbfaf7; --fg: #1d1c1a; --muted: #6b6760; --line: #e4e0d8; --accent: #b4532a; --ok: #2f7d4f; --card: #ffffff; --danger: #a3302d; }
 @media (prefers-color-scheme: dark) { :root { --bg: #161513; --fg: #ece8e1; --muted: #9b958c; --line: #2d2b27; --accent: #e0825a; --ok: #5cb57f; --card: #1f1d1a; --danger: #e06c69; } }
 * { box-sizing: border-box; }
@@ -37,30 +27,6 @@ button:disabled { opacity: 0.6; cursor: default; }
 .fingerprint { font: 0.85rem ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); }
 .status { margin-top: 14px; min-height: 1.5em; }
 .status.error { color: var(--danger); }
+.code-input { width: 100%; font: 1.4rem ui-monospace, monospace; letter-spacing: 0.15em; padding: 10px; margin: 8px 0 14px; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: inherit; }
 ol { padding-left: 20px; }
 `;
-
-/** One layout for every page: mobile-first (the device page is opened from a phone), dark-mode aware. */
-export function layout(options: PageOptions, body: HtmlEscapedString | Promise<HtmlEscapedString>) {
-  return html`<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${options.title} · Wrekin</title>
-<style>${raw(css)}</style>
-</head>
-<body>
-<header>
-  <a href="/">Wrekin</a>
-  <nav>
-    ${options.user ? html`<a href="/nodes">Nodes</a><span class="muted"> · ${options.user.name}</span>` : html`<a href="/login">Sign in</a>`}
-  </nav>
-</header>
-<main>
-${body}
-</main>
-${options.script ? html`<script>${raw(options.script)}</script>` : ""}
-</body>
-</html>`;
-}

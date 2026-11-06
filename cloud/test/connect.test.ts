@@ -4,6 +4,7 @@ import { createAuth } from "../src/auth";
 import { authMessage } from "../src/protocol";
 import { generateNodeKey } from "./helpers/keys";
 import { createTestSession } from "./helpers/session";
+import { listNodesOverHttp } from "./helpers/trpc-http";
 
 // The full path of a node: registered through the API, then connected through the Worker's
 // /connect route, which forwards the upgrade to the account's hub.
@@ -46,8 +47,7 @@ describe("GET /connect through the Worker", () => {
     const welcome = await next();
     expect(welcome).toMatchObject({ type: "welcome", nodeId, pingSeconds: 30 });
 
-    const list = await SELF.fetch(`${env.BASE_URL}/api/nodes`, { headers });
-    const { nodes } = (await list.json()) as { nodes: Array<{ id: string; online: boolean }> };
+    const nodes = await listNodesOverHttp((path, init) => SELF.fetch(`${env.BASE_URL}${path}`, init))(headers);
     expect(nodes.find((n) => n.id === nodeId)?.online).toBe(true);
     ws.close(1000, "done");
   });

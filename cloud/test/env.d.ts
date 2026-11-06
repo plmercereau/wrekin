@@ -1,10 +1,11 @@
-import type { Env as WorkerEnv } from "../src/env";
-
-// `env` from "cloudflare:test" / "cloudflare:workers" is typed through this global namespace.
+// The test run adds the migrations to the Worker's bindings (see vitest.config.ts); the
+// Worker's own bindings are declared in src/cloudflare-env.d.ts.
 declare global {
   namespace Cloudflare {
-    interface Env extends WorkerEnv {
+    interface Env {
       TEST_MIGRATIONS: D1Migration[];
     }
   }
 }
+
+export {};

@@ -14,6 +14,7 @@ node_modules/
 cloud/.wrangler/
 cloud/.dev.vars
 cloud/dist/
+cloud/wrangler.deploy.json
 
 # Local runs (see CONTRIBUTING.md)
 /.local/

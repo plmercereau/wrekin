@@ -4,13 +4,17 @@
 // entity and the name wrekin.platyplus.io are the platyplus/infrastructure
 // stack's (sites/wrekin/tofu); Workers Builds deploys this directory on every
 // push to main, and `bun run build` (scripts/render-wrangler.ts) writes
-// dist/wrangler.json from this file plus two build variables, the database's
-// id (WREKIN_D1_DATABASE_ID) and the public URL (WREKIN_BASE_URL). The values
-// below for those two are for local development only.
+// wrangler.deploy.json from this file plus two build variables, the database's
+// id (WREKIN_D1_DATABASE_ID) and the public URL (WREKIN_BASE_URL), before Vite
+// builds the Worker from it into dist/wrekin/. The values below for those two
+// are for local development only.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "wrekin",
-  "main": "src/index.ts",
+  // The custom TanStack Start server entry, not "@tanstack/react-start/server-entry": the
+  // Durable Object class must be exported from the Worker's main module, and the Vite plugin
+  // bundles whatever `main` names (src/server.ts re-exports AccountHub).
+  "main": "src/server.ts",
   // Latest date supported by the workerd bundled with wrangler 4.158 (1.20261104.1).
   "compatibility_date": "2026-11-04",
   "compatibility_flags": ["nodejs_compat"],

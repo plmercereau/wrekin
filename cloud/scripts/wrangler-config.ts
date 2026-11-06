@@ -7,6 +7,13 @@
  * reading and writing).
  */
 
+/**
+ * Where `bun run build` writes the rendered configuration: next to wrangler.jsonc, so the
+ * relative `main` and `migrations_dir` resolve the same from both files (Vite builds the Worker
+ * from it, `bun run deploy` applies the migrations with it).
+ */
+export const DEPLOY_CONFIG_FILE = "wrangler.deploy.json";
+
 export type DeployEnv = {
   WREKIN_D1_DATABASE_ID?: string;
   WREKIN_BASE_URL?: string;

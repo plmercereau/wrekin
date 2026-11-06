@@ -1,0 +1,73 @@
+import { describe, expect, it } from "vitest";
+import { listNodes, NodeServiceError, parseTimestamp, registerNode, removeNode, toNodeView, unregisterMessage, unregisterNode } from "../../src/nodes/service";
+import { FakeHub } from "../helpers/fake-hub";
+import { generateNodeKey } from "../helpers/keys";
+import { MemoryNodeStore } from "../helpers/memory-nodes";
+
+// The one implementation behind POST /api/nodes, POST /api/nodes/unregister and the tRPC procedures.
+const hub = new FakeHub();
+const services = { nodes: new MemoryNodeStore(), hub: hub.factory };
+
+const refusal = async (promise: Promise<unknown>) => {
+  try {
+    await promise;
+  } catch (error) {
+    if (error instanceof NodeServiceError) return { status: error.status, code: error.code };
+    throw error;
+  }
+  throw new Error("expected a NodeServiceError");
+};
+
+describe("parseTimestamp", () => {
+  it.each([
+    ["2026-11-06T00:00:00Z", Date.UTC(2026, 10, 6)],
+    ["1794009600", 1794009600 * 1000],
+    [1794009600, 1794009600 * 1000],
+    ["yesterday", null],
+    [Number.NaN, null],
+  ])("%s → %s", (input, expected) => {
+    expect(parseTimestamp(input)).toBe(expected);
+  });
+});
+
+describe("toNodeView", () => {
+  it("replaces the key by its fingerprint and merges the live state", async () => {
+    const key = await generateNodeKey();
+    const node = await services.nodes.insertNode({ accountId: "acc_view", name: "view", publicKey: key.publicKey, agentVersion: "0.1.0" });
+    const offline = await toNodeView(node, []);
+    expect(offline).toMatchObject({ id: node.id, online: false, connectedAt: null, agentVersion: "0.1.0", harnesses: [] });
+    expect(offline.fingerprint).toMatch(/^[0-9a-f]{4}(:[0-9a-f]{4}){3}$/);
+    expect(offline).not.toHaveProperty("publicKey");
+    const live = await toNodeView(node, [{ nodeId: node.id, connectedAt: "2026-11-06T00:00:00Z", agentVersion: "0.2.0", harnesses: [{ id: "claude-code", available: true }] }]);
+    expect(live).toMatchObject({ online: true, connectedAt: "2026-11-06T00:00:00Z", agentVersion: "0.2.0", harnesses: [{ id: "claude-code", available: true }] });
+  });
+});
+
+describe("registerNode and removeNode", () => {
+  it("refuses a key that is not 32 raw Ed25519 bytes before touching the store", async () => {
+    expect(await refusal(registerNode(services, "acc_reg", { name: "k", publicKey: btoa("short") }))).toEqual({ status: 400, code: "invalid_public_key" });
+  });
+
+  it("refuses a duplicate name on the account and a key registered anywhere", async () => {
+    const key = await generateNodeKey();
+    const { nodeId } = await registerNode(services, "acc_reg", { name: "laptop", publicKey: key.publicKey });
+    expect(await refusal(registerNode(services, "acc_reg", { name: "laptop", publicKey: (await generateNodeKey()).publicKey }))).toEqual({ status: 409, code: "name_taken" });
+    expect(await refusal(registerNode(services, "acc_other", { name: "elsewhere", publicKey: key.publicKey }))).toEqual({ status: 409, code: "key_taken" });
+    expect(await removeNode(services, "acc_other", nodeId)).toBe(false);
+    expect(await removeNode(services, "acc_reg", nodeId)).toBe(true);
+    expect(await listNodes(services, "acc_reg")).toHaveLength(0);
+  });
+});
+
+describe("unregisterNode", () => {
+  it("verifies the signature over the fresh timestamp with the stored key", async () => {
+    const key = await generateNodeKey();
+    const { nodeId } = await registerNode(services, "acc_unreg", { name: "box", publicKey: key.publicKey });
+    const timestamp = new Date().toISOString();
+    expect(await refusal(unregisterNode(services, { nodeId: "node_nope", timestamp, signature: await key.sign(unregisterMessage("node_nope", timestamp)) }))).toEqual({ status: 404, code: "unknown_node" });
+    expect(await refusal(unregisterNode(services, { nodeId, timestamp: "2020-01-01T00:00:00Z", signature: await key.sign(unregisterMessage(nodeId, "2020-01-01T00:00:00Z")) }))).toEqual({ status: 401, code: "stale_timestamp" });
+    expect(await refusal(unregisterNode(services, { nodeId, timestamp, signature: await (await generateNodeKey()).sign(unregisterMessage(nodeId, timestamp)) }))).toEqual({ status: 401, code: "bad_signature" });
+    await unregisterNode(services, { nodeId, timestamp, signature: await key.sign(unregisterMessage(nodeId, timestamp)) });
+    expect(await listNodes(services, "acc_unreg")).toHaveLength(0);
+  });
+});

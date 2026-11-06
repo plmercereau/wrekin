@@ -1,8 +1,10 @@
 import { memoryAdapter, type MemoryDB } from "better-auth/adapters/memory";
-import { createApp } from "../../src/app";
 import { buildAuth } from "../../src/auth";
 import type { Env } from "../../src/env";
+import { createApiHandler } from "../../src/http";
 import { provideServices, type Services } from "../../src/services";
+import { createContext } from "../../src/trpc/context";
+import { createCaller } from "../../src/trpc/router";
 import type { Fetcher } from "../shared/auth-suite";
 import { FakeHub } from "./fake-hub";
 import { MemoryNodeStore } from "./memory-nodes";
@@ -43,8 +45,12 @@ export function memoryAuth(env: Env) {
   });
 }
 
-/** The Worker hosted in plain Node: memory auth, an in-memory node store and a fake hub unless overridden. */
-export function nodeApp(overrides: Partial<Services> = {}) {
+/**
+ * The Worker's machine surfaces (src/http.ts) and tRPC router hosted in plain Node: memory
+ * auth, an in-memory node store and a fake hub unless overridden. The pages need the built
+ * Worker and are covered by the workerd run only.
+ */
+export function nodeWorker(overrides: Partial<Services> = {}) {
   const env = fakeEnv();
   const services: Services = {
     auth: overrides.auth ?? memoryAuth(env),
@@ -52,7 +58,13 @@ export function nodeApp(overrides: Partial<Services> = {}) {
     hub: overrides.hub ?? new FakeHub().factory,
   };
   provideServices(env, services);
-  const app = createApp();
-  const fetcher: Fetcher = async (path, init) => app.request(path, init, env);
-  return { app, env, services, fetcher };
+  const api = createApiHandler(env, services);
+  const fetcher: Fetcher = async (path, init) => {
+    const response = await api(new Request(`${TEST_BASE_URL}${path}`, init));
+    return response ?? new Response("a page: not served by the API dispatcher", { status: 501 });
+  };
+  /** The tRPC procedures called in-process, as the bearer of `headers` (anonymous without). */
+  const caller = async (headers: Record<string, string> = {}) =>
+    createCaller(await createContext({ request: new Request(`${TEST_BASE_URL}/api/trpc`, { headers }), env, services }));
+  return { env, services, fetcher, caller };
 }

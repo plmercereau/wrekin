@@ -1,6 +1,6 @@
 /** Base64 (standard alphabet, padded) and Ed25519 helpers shared by the node API and the hub. */
 
-export function decodeBase64(value: string): Uint8Array | null {
+export function decodeBase64(value: string): Uint8Array<ArrayBuffer> | null {
   if (!/^[A-Za-z0-9+/]*={0,2}$/.test(value) || value.length % 4 !== 0) return null;
   try {
     const binary = atob(value);
@@ -23,7 +23,7 @@ export const ED25519_PUBLIC_KEY_BYTES = 32;
 export const ED25519_SIGNATURE_BYTES = 64;
 
 /** Returns the raw key bytes when `publicKey` is the base64 of a 32-byte Ed25519 key, else null. */
-export function parsePublicKey(publicKey: string): Uint8Array | null {
+export function parsePublicKey(publicKey: string): Uint8Array<ArrayBuffer> | null {
   const bytes = decodeBase64(publicKey);
   return bytes && bytes.length === ED25519_PUBLIC_KEY_BYTES ? bytes : null;
 }

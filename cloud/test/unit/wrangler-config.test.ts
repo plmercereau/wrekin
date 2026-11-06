@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 import { describe, expect, it } from "vitest";
 import committed from "../../wrangler.jsonc?raw";
-import { parseWranglerConfig, renderDeployConfig, stripJsonComments } from "../../scripts/wrangler-config";
+import { DEPLOY_CONFIG_FILE, parseWranglerConfig, renderDeployConfig, stripJsonComments } from "../../scripts/wrangler-config";
 
 const source = `// a comment
 {
@@ -55,5 +55,14 @@ describe("renderDeployConfig", () => {
     expect(out.routes).toBeUndefined();
     expect(out.workers_dev).toBe(false);
     expect(parseWranglerConfig(committed).d1_databases?.[0]?.database_id).toBe("00000000-0000-0000-0000-000000000000");
+  });
+
+  it("keeps the relative paths verbatim, since the file is written next to wrangler.jsonc", () => {
+    expect(DEPLOY_CONFIG_FILE).toBe("wrangler.deploy.json");
+    const out = JSON.parse(renderDeployConfig(committed, env));
+    // The custom TanStack Start server entry that exports the Durable Object class.
+    expect(out.main).toBe("src/server.ts");
+    expect(out.d1_databases[0].migrations_dir).toBe("migrations");
+    expect(out.durable_objects).toEqual({ bindings: [{ name: "ACCOUNT_HUB", class_name: "AccountHub" }] });
   });
 });

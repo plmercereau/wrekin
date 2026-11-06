@@ -1,5 +1,5 @@
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { Client } from "@modelcontextprotocol/client";
+import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { beforeAll, describe, expect, it } from "vitest";
 import { buildMcpServer } from "../../src/mcp/server";
 import { parseCloudSessionId } from "../../src/mcp/session-id";
@@ -7,7 +7,7 @@ import type { Job } from "../../src/protocol";
 import { FakeHub } from "../helpers/fake-hub";
 import { generateNodeKey } from "../helpers/keys";
 import { MemoryNodeStore } from "../helpers/memory-nodes";
-import { nodeApp } from "../helpers/node-app";
+import { nodeWorker } from "../helpers/node-app";
 
 describe("parseCloudSessionId", () => {
   it.each([
@@ -172,7 +172,7 @@ describe("MCP tools", () => {
 });
 
 describe("POST /mcp", () => {
-  const { fetcher } = nodeApp();
+  const { fetcher } = nodeWorker();
 
   it("challenges an unauthenticated request with the protected resource metadata", async () => {
     const res = await fetcher("/mcp", {
