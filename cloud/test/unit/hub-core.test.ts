@@ -156,13 +156,65 @@ describe("handshake", () => {
   });
 
   it("closes 4400 a socket that has not authenticated within the handshake timeout", async () => {
-    const hub = makeHub({ handshakeTimeoutMs: 20 });
+    // Fake timers: the in-memory timer fires when the test says so, not in a race with the
+    // real Ed25519 operations of the handshake under the load of the whole suite.
+    vi.useFakeTimers();
+    try {
+      const hub = makeHub({ handshakeTimeoutMs: 20 });
+      const socket = hub.open("node_1", key.publicKey);
+      await vi.advanceTimersByTimeAsync(60);
+      expect(socket.closed?.code).toBe(closeCodes.protocolError);
+      const quick = await connectAndAuth(hub, "node_1", key);
+      await vi.advanceTimersByTimeAsync(60);
+      expect(quick.closed).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("enforces the handshake deadline from the attachment when the in-memory timer is gone (hibernation)", async () => {
+    const hub = makeHub();
+    const now = new Date("2026-11-06T00:00:00Z").getTime();
+    // A socket accepted before the object was evicted from memory: its attachment survived, its timer did not.
+    const woken = (stage: "hello" | "challenged", handshakeDeadline: number) => {
+      const socket = new FakeSocket();
+      socket.setAttachment({
+        connectionId: `conn_${stage}_${handshakeDeadline}`,
+        accountId: "acc_test",
+        nodeId: "node_1",
+        publicKey: key.publicKey,
+        stage,
+        connectedAt: new Date(handshakeDeadline - 10_000).toISOString(),
+        handshakeDeadline,
+        ...(stage === "challenged" ? { nonce: "bm9uY2U=" } : {}),
+      });
+      hub.sockets.push(socket);
+      return socket;
+    };
+    const hello = { v: 1, type: "hello", nodeId: "node_1", publicKey: key.publicKey, name: "ws", agentVersion: "0.1.0" };
+
+    const late = woken("hello", now - 1);
+    await hub.frame(late, hello);
+    expect(late.closed?.code).toBe(closeCodes.protocolError);
+    expect(late.last()).toMatchObject({ type: "error", code: "protocol_error" });
+
+    const lateChallenged = woken("challenged", now - 1);
+    await hub.frame(lateChallenged, { v: 1, type: "auth", signature: await key.sign(authMessage("node_1", "bm9uY2U=")) });
+    expect(lateChallenged.closed?.code).toBe(closeCodes.protocolError);
+
+    const inTime = woken("hello", now + 5_000);
+    await hub.frame(inTime, hello);
+    expect(inTime.closed).toBeNull();
+    expect(inTime.last().type).toBe("challenge");
+  });
+
+  it("records the handshake deadline in the attachment at open and drops it once authenticated", async () => {
+    const hub = makeHub({ handshakeTimeoutMs: 10_000 });
     const socket = hub.open("node_1", key.publicKey);
-    await new Promise((r) => setTimeout(r, 60));
-    expect(socket.closed?.code).toBe(closeCodes.protocolError);
-    const quick = await connectAndAuth(hub, "node_1", key);
-    await new Promise((r) => setTimeout(r, 60));
-    expect(quick.closed).toBeNull();
+    expect(socket.getAttachment()?.handshakeDeadline).toBe(new Date("2026-11-06T00:00:10Z").getTime());
+    const authed = await connectAndAuth(hub, "node_1", key);
+    expect(authed.getAttachment()?.stage).toBe("authed");
+    expect(authed.getAttachment()).not.toHaveProperty("handshakeDeadline");
   });
 
   it("replaces an older connection of the same node with 4409", async () => {

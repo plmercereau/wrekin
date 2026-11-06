@@ -30,6 +30,12 @@ export type Attachment = {
   publicKey: string;
   stage: "hello" | "challenged" | "authed";
   nonce?: string;
+  /**
+   * Epoch milliseconds by which the handshake must be complete. Lives here, not only in the
+   * in-memory timer, because the object may hibernate between the open and the hello and
+   * wake up without its timers; absent on an authenticated socket.
+   */
+  handshakeDeadline?: number;
   connectedAt: string;
   name?: string;
   agentVersion?: string;
@@ -87,15 +93,19 @@ export class HubCore {
 
   /** A socket was accepted for `nodeId`; nothing is sent until the node says hello. */
   onOpen(socket: HubSocket, identity: { accountId: string; nodeId: string; publicKey: string }): void {
+    const opened = this.host.now();
     const attachment: Attachment = {
       connectionId: randomId("conn"),
       accountId: identity.accountId,
       nodeId: identity.nodeId,
       publicKey: identity.publicKey,
       stage: "hello",
-      connectedAt: this.host.now().toISOString(),
+      handshakeDeadline: opened.getTime() + this.handshakeTimeoutMs,
+      connectedAt: opened.toISOString(),
     };
     socket.setAttachment(attachment);
+    // The fast path: closes an idle socket on time while the object is in memory. The
+    // deadline in the attachment is what remains after a hibernation.
     const timer = setTimeout(() => {
       this.handshakeTimers.delete(attachment.connectionId);
       const live = this.socketOf(attachment.connectionId);
@@ -109,6 +119,11 @@ export class HubCore {
   async onMessage(socket: HubSocket, data: string | ArrayBuffer): Promise<void> {
     const attachment = socket.getAttachment();
     if (!attachment) return this.fail(socket, closeCodes.protocolError, "protocol_error", "unknown connection");
+    // A socket still in its handshake past the deadline (an attachment without one dates
+    // from before the deadline existed and has no timer either): closed, whatever the frame.
+    if (attachment.stage !== "authed" && this.host.now().getTime() > (attachment.handshakeDeadline ?? 0)) {
+      return this.fail(socket, closeCodes.protocolError, "protocol_error", "handshake timeout");
+    }
     if (typeof data !== "string") return this.fail(socket, closeCodes.protocolError, "protocol_error", "text frames only");
     let raw: unknown;
     try {
@@ -236,7 +251,7 @@ export class HubCore {
     if (!valid) return this.fail(socket, closeCodes.authFailed, "auth_failed", "bad signature");
 
     this.clearHandshakeTimer(attachment.connectionId);
-    const { nonce: _nonce, ...rest } = attachment;
+    const { nonce: _nonce, handshakeDeadline: _deadline, ...rest } = attachment;
     socket.setAttachment({ ...rest, stage: "authed" });
     this.trySend(socket, JSON.stringify(welcome(attachment.accountId, attachment.nodeId, this.pingSeconds)));
 
