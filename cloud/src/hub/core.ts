@@ -243,6 +243,15 @@ export class HubCore {
     if (!result.success) return this.fail(socket, closeCodes.protocolError, "protocol_error", "invalid result");
     const entry = this.pending.get(result.data.id);
     if (!entry) return; // late or duplicate answer
+    if (entry.connectionId !== attachment.connectionId) {
+      // Only the connection the command went to may answer it: another node of the
+      // account, or an older socket of the same node, cannot resolve or forge a result.
+      console.warn(
+        `hub: result for ${result.data.id} from connection ${attachment.connectionId} (node ${attachment.nodeId}); ` +
+          `the command went to connection ${entry.connectionId} (node ${entry.nodeId}); ignored`,
+      );
+      return;
+    }
     clearTimeout(entry.timer);
     this.pending.delete(result.data.id);
     entry.resolve(result.data.ok ? { ok: true, data: result.data.data } : { ok: false, error: result.data.error });

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { encodeBase64, verifyEd25519 } from "../../src/crypto";
 import { HubCore, type Attachment, type HubSocket } from "../../src/hub/core";
 import { authMessage, closeCodes } from "../../src/protocol";
@@ -206,6 +206,35 @@ describe("commands", () => {
     hub.core.onClose(socket, 1006, "gone");
     expect(await pending).toMatchObject({ ok: false, error: { code: "node_offline" } });
     expect(hub.core.online()).toEqual([]);
+  });
+
+  it("accepts a result only from the connection the command was sent to", async () => {
+    const hub = makeHub();
+    const a = await connectAndAuth(hub, "node_a", await generateNodeKey());
+    const b = await connectAndAuth(hub, "node_b", await generateNodeKey());
+    let settled = false;
+    const pending = hub.core.command("node_a", "ping", {}, 1000).then((result) => {
+      settled = true;
+      return result;
+    });
+    const { id } = a.last<{ id: string }>();
+    expect(b.sent.some((frame) => frame.includes(id))).toBe(false); // B never saw the command
+
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await hub.frame(b, { v: 1, type: "result", id, ok: true, data: { forged: true } });
+      await new Promise((r) => setTimeout(r, 0));
+      expect(settled).toBe(false);
+      expect(b.closed).toBeNull(); // ignored, not a protocol failure
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls[0]?.[0]).toContain(id);
+    } finally {
+      warn.mockRestore();
+    }
+
+    await hub.frame(a, { v: 1, type: "result", id, ok: true, data: { at: "now" } });
+    expect(await pending).toEqual({ ok: true, data: { at: "now" } });
+    expect(hub.core.online()).toHaveLength(2);
   });
 
   it("ignores a result for an unknown command id and a malformed result", async () => {
