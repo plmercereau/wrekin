@@ -21,6 +21,10 @@ export interface HubClient {
   connect(request: Request, node: NodeRecord): Promise<Response>;
   /** Closes the node's sockets with 4404 once its row is gone, so it is offline at once and reconnects to a 404. */
   evict(nodeId: string): Promise<void>;
+  /** Forwards the nodes page's WebSocket upgrade (src/live.ts); the caller has checked the session and the origin. */
+  watch(request: Request): Promise<Response>;
+  /** Tells the account's open nodes pages that the list changed in a way the hub cannot see (a registration). */
+  changed(): Promise<void>;
 }
 
 export type HubFactory = (accountId: string) => HubClient;
@@ -60,6 +64,17 @@ export function hubFor(env: Env, accountId: string): HubClient {
         body: JSON.stringify({ nodeId }),
       });
       if (!res.ok) throw new Error(`hub /nodes/evict answered ${res.status}`);
+    },
+    watch(request) {
+      // The upgrade goes on without the credentials: the hub needs no cookie and no session.
+      const headers = new Headers(request.headers);
+      headers.delete("cookie");
+      headers.delete("authorization");
+      return stub.fetch(`${HUB_ORIGIN}/watch`, { headers });
+    },
+    async changed() {
+      const res = await stub.fetch(`${HUB_ORIGIN}/nodes/changed`, { method: "POST" });
+      if (!res.ok) throw new Error(`hub /nodes/changed answered ${res.status}`);
     },
   };
 }

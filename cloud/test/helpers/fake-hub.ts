@@ -13,6 +13,10 @@ export class FakeHub {
   readonly commands: RecordedCommand[] = [];
   /** Every `evict` the routes asked for, as `accountId/nodeId`. */
   readonly evicted: string[] = [];
+  /** The accounts a live channel was opened for, in order. */
+  readonly watched: string[] = [];
+  /** The accounts told that their list changed, in order. */
+  readonly changed: string[] = [];
 
   setOnline(accountId: string, nodes: OnlineNode[]) {
     this.online.set(accountId, nodes);
@@ -38,6 +42,14 @@ export class FakeHub {
       evict: async (nodeId: string) => {
         this.evicted.push(`${accountId}/${nodeId}`);
         this.online.set(accountId, (this.online.get(accountId) ?? []).filter((n) => n.nodeId !== nodeId));
+      },
+      // Plain Node cannot answer 101: the fake says which account it would have watched.
+      watch: async () => {
+        this.watched.push(accountId);
+        return Response.json({ watching: accountId }, { status: 200 });
+      },
+      changed: async () => {
+        this.changed.push(accountId);
       },
     };
     return hub;

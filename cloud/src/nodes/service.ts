@@ -101,7 +101,7 @@ export async function listNodes({ nodes, hub }: NodeServices, accountId: string)
 
 /** Registers a node for `accountId` (what `wrekin auth` does once the device code is approved). */
 export async function registerNode(
-  { nodes }: NodeServices,
+  { nodes, hub }: NodeServices,
   accountId: string,
   input: RegisterInput,
 ): Promise<{ nodeId: string; accountId: string }> {
@@ -112,12 +112,22 @@ export async function registerNode(
   }
   try {
     const node = await nodes.insertNode({ accountId, ...input, publicKey });
+    await announce(hub, accountId);
     return { nodeId: node.id, accountId: node.accountId };
   } catch (error) {
     if (error instanceof NodeConflictError) {
       throw new NodeServiceError(409, error.field === "name" ? "name_taken" : "key_taken", error.message);
     }
     throw error;
+  }
+}
+
+/** Tells the account's open nodes pages about a new row. Best effort: a page that misses it catches up on its next load. */
+async function announce(hub: HubFactory, accountId: string): Promise<void> {
+  try {
+    await hub(accountId).changed();
+  } catch (error) {
+    console.warn("nodes: could not tell the hub about a registration", error instanceof Error ? error.message : String(error));
   }
 }
 

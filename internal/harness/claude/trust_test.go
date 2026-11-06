@@ -123,7 +123,7 @@ func TestTrustWritesKeyAndBackup(t *testing.T) {
 }
 
 func TestTrustRefusesUnrecognisedFile(t *testing.T) {
-	for _, body := range []string{`[]`, `{"foo": 1}`, `{"projects": []}`, `not json`, `"str"`} {
+	for _, body := range []string{`[]`, `{"projects": []}`, `{"projects": null}`, `not json`, `"str"`} {
 		path := filepath.Join(t.TempDir(), ".claude.json")
 		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 			t.Fatal(err)
@@ -144,8 +144,74 @@ func TestTrustRefusesUnrecognisedFile(t *testing.T) {
 			t.Errorf("%s: Trusted err = %v", body, err)
 		}
 	}
-	missing := New(filepath.Join(t.TempDir(), "absent.json"), "claude")
-	if err := missing.Trust("/x"); !errors.Is(err, ErrUnrecognisedClaudeJSON) {
-		t.Errorf("Trust on a missing file: err = %v", err)
+}
+
+// On a machine where Claude Code has never run, there is no file: Trust
+// creates it, private, with the one entry, and writes no backup of nothing.
+func TestTrustCreatesAMissingFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config", ".claude.json")
+	c := New(path, "claude")
+	if ok, err := c.Trusted("/x"); ok || err != nil {
+		t.Fatalf("Trusted on a missing file = %v, %v", ok, err)
+	}
+	if err := c.Trust("/x"); err != nil {
+		t.Fatalf("Trust: %v", err)
+	}
+	var got map[string]any
+	data, _ := os.ReadFile(path)
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]any{"projects": map[string]any{"/x": map[string]any{"hasTrustDialogAccepted": true}}}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("file = %v, want %v", got, want)
+	}
+	if info, _ := os.Stat(path); info.Mode().Perm() != 0o600 {
+		t.Errorf("mode = %o, want 600", info.Mode().Perm())
+	}
+	if _, err := os.Stat(path + ".wrekin-backup"); !errors.Is(err, os.ErrNotExist) {
+		t.Error("a backup was written for a file that did not exist")
+	}
+	if ok, err := c.Trusted("/x"); !ok || err != nil {
+		t.Errorf("Trusted after Trust = %v, %v", ok, err)
+	}
+}
+
+// What `claude auth status` leaves on a fresh machine: no "projects" yet.
+// Trust adds it and keeps every other key.
+func TestTrustAddsProjectsToAFileWithout(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".claude.json")
+	fresh := `{"firstStartTime": "2026-11-06T15:40:45.396Z", "migrationVersion": 13, "userID": "abc"}`
+	if err := os.WriteFile(path, []byte(fresh), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c := New(path, "claude")
+	if ok, err := c.Trusted("/x"); ok || err != nil {
+		t.Fatalf("Trusted = %v, %v", ok, err)
+	}
+	if err := c.Trust("/x"); err != nil {
+		t.Fatalf("Trust: %v", err)
+	}
+	var got map[string]any
+	data, _ := os.ReadFile(path)
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["userID"] != "abc" || got["migrationVersion"] != float64(13) || got["firstStartTime"] == nil {
+		t.Errorf("other keys lost: %v", got)
+	}
+	if ok, _ := c.Trusted("/x"); !ok {
+		t.Error("not trusted after Trust")
+	}
+	backup, _ := os.ReadFile(path + ".wrekin-backup")
+	if string(backup) != fresh {
+		t.Errorf("backup = %q", backup)
+	}
+}
+
+func TestDefaultClaudeJSONPathFollowsClaudeConfigDir(t *testing.T) {
+	t.Setenv("CLAUDE_CONFIG_DIR", "/srv/claude")
+	if got := DefaultClaudeJSONPath(); got != "/srv/claude/.claude.json" {
+		t.Errorf("path = %q", got)
 	}
 }

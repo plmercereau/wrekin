@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 )
 
-// ErrUnrecognisedClaudeJSON means ~/.claude.json is missing or does not look
-// like an object with a "projects" object; Wrekin then refuses to touch it.
+// ErrUnrecognisedClaudeJSON means ~/.claude.json is not a JSON object, or has
+// a "projects" value that is not an object; Wrekin then refuses to touch it.
 var ErrUnrecognisedClaudeJSON = errors.New("~/.claude.json does not have the expected shape")
 
 // trustKey is the per-project flag Claude Code sets once the user has
@@ -24,6 +24,10 @@ type claudeJSON struct {
 	projects map[string]json.RawMessage
 }
 
+// read parses the file. A file without "projects" is a valid one: Claude Code
+// writes it so on a machine where no project has been opened yet (a first
+// `claude auth login` or `claude auth status` does), and the key is added on
+// the first Trust.
 func (c *Claude) read() (*claudeJSON, error) {
 	data, err := os.ReadFile(c.claudeJSON)
 	if err != nil {
@@ -33,13 +37,12 @@ func (c *Claude) read() (*claudeJSON, error) {
 	if err := json.Unmarshal(data, &top); err != nil || top == nil {
 		return nil, fmt.Errorf("%w: top level is not an object", ErrUnrecognisedClaudeJSON)
 	}
-	rawProjects, ok := top["projects"]
-	if !ok {
-		return nil, fmt.Errorf("%w: no \"projects\" key", ErrUnrecognisedClaudeJSON)
-	}
-	var projects map[string]json.RawMessage
-	if err := json.Unmarshal(rawProjects, &projects); err != nil || projects == nil {
-		return nil, fmt.Errorf("%w: \"projects\" is not an object", ErrUnrecognisedClaudeJSON)
+	projects := map[string]json.RawMessage{}
+	if rawProjects, ok := top["projects"]; ok {
+		projects = nil
+		if err := json.Unmarshal(rawProjects, &projects); err != nil || projects == nil {
+			return nil, fmt.Errorf("%w: \"projects\" is not an object", ErrUnrecognisedClaudeJSON)
+		}
 	}
 	return &claudeJSON{top: top, projects: projects}, nil
 }
@@ -70,11 +73,15 @@ func (c *Claude) Trusted(dir string) (bool, error) {
 
 // Trust implements harness.Harness: it sets projects[dir].hasTrustDialogAccepted
 // to true, after copying the file to <file>.wrekin-backup. Every other value
-// is preserved. The file must already exist with the expected shape.
+// is preserved. On a machine where Claude Code has never run, the file does
+// not exist: it is created (mode 0600) with that one entry, and Claude Code
+// adds the rest of its configuration on its first start.
 func (c *Claude) Trust(dir string) error {
 	doc, err := c.read()
+	existed := true
 	if errors.Is(err, fs.ErrNotExist) {
-		return fmt.Errorf("%w: %s does not exist; run claude once first", ErrUnrecognisedClaudeJSON, c.claudeJSON)
+		existed = false
+		doc, err = &claudeJSON{top: map[string]json.RawMessage{}, projects: map[string]json.RawMessage{}}, nil
 	}
 	if err != nil {
 		return err
@@ -101,8 +108,12 @@ func (c *Claude) Trust(dir string) error {
 		return err
 	}
 
-	if err := c.backup(); err != nil {
-		return fmt.Errorf("backup %s: %w", c.claudeJSON, err)
+	if existed {
+		if err := c.backup(); err != nil {
+			return fmt.Errorf("backup %s: %w", c.claudeJSON, err)
+		}
+	} else if err := os.MkdirAll(filepath.Dir(c.claudeJSON), 0o700); err != nil {
+		return err
 	}
 	return writeAtomic(c.claudeJSON, append(out, '\n'))
 }

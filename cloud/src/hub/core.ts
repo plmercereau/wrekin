@@ -59,6 +59,8 @@ export interface HubHost {
   now(): Date;
   /** Called once a node has authenticated: the Worker records `last_seen_at`. */
   onAuthenticated(nodeId: string, at: string): Promise<void>;
+  /** The account's online set may have changed: a node authenticated, an authenticated socket closed, a node was evicted. */
+  onPresenceChanged(): void;
 }
 
 export type HubCoreOptions = {
@@ -154,6 +156,8 @@ export class HubCore {
     if (!attachment) return;
     this.clearHandshakeTimer(attachment.connectionId);
     this.failPending(attachment.connectionId, "the node disconnected before answering");
+    // A socket that never authenticated was never online: nothing the page shows changed.
+    if (attachment.stage === "authed") this.host.onPresenceChanged();
   }
 
   /**
@@ -169,6 +173,8 @@ export class HubCore {
       this.failPending(attachment.connectionId, "the node was removed from the account");
       this.fail(socket, closeCodes.unknownNode, "unknown_node", "the node was removed from the account");
     }
+    // Said even when the node had no socket: its row is gone, which the page shows too.
+    this.host.onPresenceChanged();
   }
 
   /** Nodes with an authenticated socket, one entry per node. */
@@ -272,6 +278,7 @@ export class HubCore {
     } catch (error) {
       console.warn("hub: could not record last_seen_at", error instanceof Error ? error.message : String(error));
     }
+    this.host.onPresenceChanged();
   }
 
   private onResult(socket: HubSocket, attachment: Attachment, raw: unknown): void {

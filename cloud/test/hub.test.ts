@@ -4,6 +4,7 @@ import { getDb } from "../src/db/kysely";
 import { KyselyNodeStore } from "../src/db/nodes";
 import { ACCOUNT_ID_HEADER, PUBLIC_KEY_HEADER } from "../src/hub/headers";
 import { HUB_ORIGIN, hubFor } from "../src/hub/client";
+import { nodesChangedFrame } from "../src/live";
 import { authMessage, closeCodes } from "../src/protocol";
 import { generateNodeKey } from "./helpers/keys";
 
@@ -16,6 +17,11 @@ async function openSocket(accountId: string, nodeId: string, publicKey: string) 
   const res = await stub.fetch(`${HUB_ORIGIN}/connect?nodeId=${encodeURIComponent(nodeId)}`, {
     headers: { Upgrade: "websocket", [PUBLIC_KEY_HEADER]: publicKey, [ACCOUNT_ID_HEADER]: accountId },
   });
+  return track(res);
+}
+
+/** The test's end of a 101 answer: buffered frames, and promises for the next frame and the close. */
+function track(res: Response) {
   expect(res.status).toBe(101);
   const ws = res.webSocket;
   if (!ws) throw new Error("no WebSocket on the 101 response");
@@ -156,5 +162,43 @@ describe("AccountHub", () => {
     const socket = await authenticate("acc_ping", "node_ping", key);
     socket.ws.send('{"v":1,"type":"ping"}');
     expect(await socket.next()).toEqual({ v: 1, type: "pong" });
+  });
+});
+
+describe("AccountHub's live channel", () => {
+  const watch = async (accountId: string) =>
+    track(await hubFor(env, accountId).watch(new Request("https://relay.test/api/nodes/live", { headers: { Upgrade: "websocket" } })));
+  const changed = JSON.parse(nodesChangedFrame) as Frame;
+
+  it("tells the account's pages when a node authenticates, disconnects, registers or is evicted", async () => {
+    const page = await watch("acc_live");
+    const key = await generateNodeKey();
+    const node = await authenticate("acc_live", "node_live", key);
+    expect(await page.next()).toEqual(changed);
+    node.ws.close(1000, "bye");
+    expect(await page.next()).toEqual(changed);
+    await hubFor(env, "acc_live").changed();
+    expect(await page.next()).toEqual(changed);
+    await hubFor(env, "acc_live").evict("node_live");
+    expect(await page.next()).toEqual(changed);
+  });
+
+  it("is not a node: it is never online, and a stray frame neither closes it nor reaches the handshake", async () => {
+    const page = await watch("acc_live_quiet");
+    page.ws.send("{not json");
+    page.ws.send('{"v":1,"type":"hello"}');
+    expect(await hubFor(env, "acc_live_quiet").online()).toEqual([]);
+    // Still open: the next hint arrives.
+    await hubFor(env, "acc_live_quiet").changed();
+    expect(await page.next()).toEqual(changed);
+  });
+
+  it("hears nothing of another account", async () => {
+    const page = await watch("acc_live_a");
+    await hubFor(env, "acc_live_b").changed();
+    await hubFor(env, "acc_live_a").changed();
+    // The first frame is account A's own hint; had B's reached it, it would be followed by a second.
+    expect(await page.next()).toEqual(changed);
+    await expect(page.next()).rejects.toThrow("no frame");
   });
 });

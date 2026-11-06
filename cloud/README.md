@@ -15,7 +15,8 @@ src/server.ts           Worker entry (wrangler `main`): the machine surfaces fir
                         TanStack Start; exports the AccountHub Durable Object class
 src/http.ts             the machine surfaces: Better Auth (with the device/token form shim),
                         OAuth discovery, POST /api/nodes, POST /api/nodes/unregister,
-                        GET /connect, POST /mcp (405 otherwise), JSON 404 under /api and /mcp
+                        GET /connect, GET /api/nodes/live, POST /mcp (405 otherwise),
+                        JSON 404 under /api and /mcp
 src/env.ts              bindings and secrets (src/cloudflare-env.d.ts types `env` of cloudflare:workers)
 src/services.ts         auth + node store + hub, built from env (tests inject their own)
 src/auth.ts             Better Auth: GitHub, Google, device authorization, MCP OAuth
@@ -26,6 +27,9 @@ src/hub/                core.ts (handshake, routing), account-hub.ts (the Durabl
 src/nodes/service.ts    register, list, remove, signed unregistration: the one implementation
                         behind the REST routes the Go agent speaks and the tRPC procedures
 src/connect.ts          GET /connect: the nodes' WebSocket
+src/live.ts             GET /api/nodes/live: the nodes page's WebSocket to the account's hub,
+                        which says `nodes.changed` and nothing else; the page then refetches
+                        (src/client/live.ts)
 src/mcp/                McpServer (@modelcontextprotocol/server v2), tools, session id
                         parsing, the /mcp handler behind requireMcpAuth
 src/trpc/               context (env, services, session user), init, router:
@@ -210,6 +214,14 @@ names are letters, digits, spaces, dots, underscores and dashes, never
 `node_…`; the relay checks every command's parameters against the
 protocol schemas before anything leaves for a node, and bounds the MCP
 arguments.
+
+`GET /api/nodes/live`, the nodes page's WebSocket, requires an `Origin`
+equal to `BASE_URL` (403 otherwise, an absent one included: a WebSocket
+handshake is outside CORS and carries the cookie) and a session (401).
+The hub accepts it on the session user's own account and forwards
+neither the cookie nor any identity to it; it carries only the
+`nodes.changed` hint, never node data, which the page reads through
+`nodes.list` as before.
 
 Not done yet: rate limiting. `/connect` costs a D1 lookup and a Durable
 Object wake-up per attempt, `/api/nodes/unregister` a signature check,

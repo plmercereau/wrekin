@@ -15,10 +15,12 @@ import (
 
 func newAuthCommand(a *app) *cobra.Command {
 	var name, relayURL string
+	var noClaudeLogin bool
 	cmd := &cobra.Command{
 		Use:   "auth",
 		Short: "Pair this machine with your Wrekin account",
-		Long:  "Generates the node key pair if needed, shows a pairing code to approve on another device, and registers the public key. The private key never leaves this machine.",
+		Long: "Generates the node key pair if needed, shows a pairing code to approve on another device, and registers the public key. The private key never leaves this machine.\n\n" +
+			"Then checks that Claude Code is signed in on this machine, which every teleport needs, and runs `claude auth login` when it is not (on a terminal, unless --no-claude-login). On a machine already paired, only that check runs.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			settings, err := config.Load(a.settingsPath)
 			if err != nil {
@@ -45,6 +47,7 @@ func newAuthCommand(a *app) *cobra.Command {
 				return err
 			case id.Paired():
 				fmt.Fprintf(a.stdout, "This machine is already paired as node %s (account %s).\nRun `wrekin logout` first to pair it again.\n", id.NodeID, id.AccountID)
+				ensureClaudeSignedIn(cmd.Context(), a, !noClaudeLogin)
 				return nil
 			}
 
@@ -67,10 +70,12 @@ func newAuthCommand(a *app) *cobra.Command {
 				fmt.Fprintf(a.stdout, "Wrote %s; edit workspace.allowedDirectories to choose where teleports may land.\n", a.settingsPath)
 			}
 			fmt.Fprintf(a.stdout, "Paired as node %s (%s). Start the agent with `wrekin start`.\n", nodeID, settings.Name)
+			ensureClaudeSignedIn(cmd.Context(), a, !noClaudeLogin)
 			return nil
 		},
 	}
 	cmd.Flags().StringVar(&name, "name", "", "node name shown in Claude (default: hostname)")
 	cmd.Flags().StringVar(&relayURL, "relay", "", "relay URL (default "+config.DefaultRelayURL+")")
+	cmd.Flags().BoolVar(&noClaudeLogin, "no-claude-login", false, "only report whether Claude Code is signed in; never run `claude auth login`")
 	return cmd
 }

@@ -89,7 +89,9 @@ The module runs `wrekin daemon` under `systemd --user` on Linux and launchd
 on macOS, with a PATH of `~/.local/bin`, your Home Manager profile, Homebrew
 on macOS, `services.wrekin.path` (git, tmux, and `claudePackage` when set)
 and the system directories, in that order: what you installed yourself wins.
-Pairing (`wrekin auth`) stays a manual, one-time step. The flake covers
+Pairing (`wrekin auth`) stays a manual, one-time step; the `wrekin` the
+module installs has the same tools appended to its PATH, so `wrekin auth`
+signs in the Claude Code the daemon will launch. The flake covers
 `x86_64-linux`, `aarch64-linux` and `aarch64-darwin` (nixpkgs no longer
 supports Intel Macs; use Homebrew or the release archive there).
 
@@ -107,6 +109,13 @@ and `claude`.
    ```sh
    wrekin auth --name workstation
    ```
+
+   Then it checks that Claude Code is signed in on the machine, since every
+   teleport runs `claude --teleport` with your credentials, and runs
+   `claude auth login` when it is not (on a terminal; `--no-claude-login`
+   only reports). On a machine already paired, `wrekin auth` runs that check
+   alone. A teleport to a node whose Claude Code is signed out fails at once
+   with `harness_unavailable`, before anything is cloned.
 
 2. Start the daemon as a user-level service (systemd `--user` on Linux,
    launchd on macOS). With Homebrew you can use `brew services start wrekin`
@@ -132,7 +141,7 @@ and `claude`.
 
 | Command | What it does |
 |---|---|
-| `wrekin auth` | Pair this machine: generate the key pair, show the pairing code, register the node |
+| `wrekin auth` | Pair this machine: generate the key pair, show the pairing code, register the node; then sign Claude Code in if it is not |
 | `wrekin start` | Install and start the user-level service (`--foreground` runs the daemon in the terminal) |
 | `wrekin stop` | Stop the service |
 | `wrekin status` | Relay connection, node identity, job counts (`--json` available) |

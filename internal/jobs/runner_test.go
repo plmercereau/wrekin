@@ -2,6 +2,7 @@ package jobs
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -560,4 +561,37 @@ func TestTeleportRefusesLocalRepositoryByDefault(t *testing.T) {
 	if job.Error == nil || job.Error.Code != protocol.CodeInvalidParams {
 		t.Fatalf("error = %+v, want invalid_params", job.Error)
 	}
+}
+
+// A harness without credentials fails the job before anything is cloned or
+// asked: approving a clone only to fail in the terminal is what happened on a
+// machine where Claude Code had never been signed in.
+func TestTeleportFailsEarlyWhenTheHarnessIsSignedOut(t *testing.T) {
+	requireGit(t)
+	e := newEnv(t, nil)
+	e.harn.signedOut = true
+	job, jerr := e.runner.Teleport(context.Background(), teleportParams(9, "plmercereau/absent"))
+	if jerr != nil {
+		t.Fatal(jerr)
+	}
+	j := e.waitState(job.ID, protocol.StateFailed)
+	if j.Error == nil || j.Error.Code != protocol.CodeHarnessUnavailable || !strings.Contains(j.Error.Message, "not signed in") {
+		t.Fatalf("error = %+v", j.Error)
+	}
+	if j.Attention != nil || e.term.launchCount() != 0 {
+		t.Errorf("nothing may be asked or launched: attention %+v, launches %d", j.Attention, e.term.launchCount())
+	}
+}
+
+// A harness that cannot tell (an older Claude Code without `auth status`)
+// does not block the teleport.
+func TestTeleportGoesOnWhenTheSignInStatusIsUnknown(t *testing.T) {
+	requireGit(t)
+	e := newEnv(t, nil)
+	e.harn.signInErr = errors.New("unknown command auth")
+	job, jerr := e.runner.Teleport(context.Background(), teleportParams(10, "plmercereau/absent"))
+	if jerr != nil {
+		t.Fatal(jerr)
+	}
+	e.waitState(job.ID, protocol.StateNeedsAttention)
 }

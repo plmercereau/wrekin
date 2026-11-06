@@ -2,6 +2,7 @@ import { oauthProviderAuthServerMetadata, oauthProviderOpenIdConfigMetadata } fr
 import { z } from "zod";
 import { connect } from "./connect";
 import type { Env } from "./env";
+import { LIVE_PATH } from "./live";
 import { createMcpFetch } from "./mcp/handler";
 import { NodeServiceError, registerNode, registerSchema, unregisterNode, unregisterSchema } from "./nodes/service";
 import type { Services } from "./services";
@@ -98,6 +99,24 @@ export function createApiHandler(env: Env, services: Services): (request: Reques
     }
   }
 
+  /**
+   * The nodes page's live channel (src/live.ts). A WebSocket handshake is not subject to
+   * CORS and carries the cookie, so the origin is required, not merely checked when present:
+   * every browser sends one on a WebSocket, and another site's page must not watch this
+   * account. The channel carries no data, only a hint to fetch `nodes.list` again.
+   */
+  async function live(request: Request): Promise<Response> {
+    if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") {
+      return json({ error: "upgrade_required", message: "expected a WebSocket upgrade" }, 426);
+    }
+    if (request.headers.get("origin") !== ownOrigin) {
+      return json({ error: "cross_site", message: "the live channel is open to the relay's own pages only" }, 403);
+    }
+    const user = await sessionUser(request);
+    if (!user) return json({ error: "unauthenticated" }, 401);
+    return services.hub(user.id).watch(request);
+  }
+
   async function unregister(request: Request): Promise<Response> {
     const body = unregisterSchema.safeParse(await request.json().catch(() => null));
     if (!body.success) return json({ error: "invalid_body", message: z.prettifyError(body.error) }, 400);
@@ -117,6 +136,7 @@ export function createApiHandler(env: Env, services: Services): (request: Reques
     // The node API the Go agent speaks; the browser uses the same operations through tRPC.
     if (path === "/api/nodes" && method === "POST") return register(request);
     if (path === "/api/nodes/unregister" && method === "POST") return unregister(request);
+    if (path === LIVE_PATH && method === "GET") return live(request);
     // The nodes' WebSocket.
     if (path === "/connect" && method === "GET") return connect(request, env);
     // The remote MCP server Claude talks to. No sessions to resume or end on a stateless server.

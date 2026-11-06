@@ -1,5 +1,6 @@
 import { useMutation } from "@tanstack/react-query";
 import { createFileRoute, useRouter } from "@tanstack/react-router";
+import { useLiveNodes } from "../client/live";
 import { useTRPC } from "../client/trpc";
 import { formatTime, Status } from "../components";
 import { listMyNodes } from "../server/pages";
@@ -12,10 +13,11 @@ export const Route = createFileRoute("/nodes")({
   component: Nodes,
 });
 
-/** The account's machines, with their fingerprint and connection state. */
+/** The account's machines, with their fingerprint and connection state, kept current by the hub's hints. */
 function Nodes() {
   const nodes = Route.useLoaderData();
   const router = useRouter();
+  const live = useLiveNodes(() => router.invalidate());
   const trpc = useTRPC();
   const remove = useMutation(trpc.nodes.remove.mutationOptions({ onSuccess: () => router.invalidate() }));
 
@@ -26,7 +28,12 @@ function Nodes() {
 
   return (
     <>
-      <h1>Your nodes</h1>
+      <div className="row">
+        <h1>Your nodes</h1>
+        <span className={live ? "badge online" : "badge"} title={live ? "Updates as machines connect and disconnect" : "Reconnecting to the live updates"}>
+          {live ? "live" : "not live"}
+        </span>
+      </div>
       {nodes.length === 0 ? (
         <div className="card">
           <p>No machine is paired yet.</p>
