@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -20,6 +21,9 @@ type app struct {
 	stdout       io.Writer
 	stderr       io.Writer
 	stdin        io.Reader
+	// httpClient talks to the cloud; nil means the pairing default (tests
+	// inject an in-process transport).
+	httpClient *http.Client
 }
 
 // errSilent marks errors already explained on stdout; Execute only sets the

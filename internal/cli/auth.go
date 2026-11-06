@@ -48,7 +48,7 @@ func newAuthCommand(a *app) *cobra.Command {
 				return nil
 			}
 
-			p := &pairing.Pairer{BaseURL: settings.HTTPBaseURL(), AgentVersion: a.version, Out: a.stdout}
+			p := &pairing.Pairer{BaseURL: settings.HTTPBaseURL(), Client: a.httpClient, AgentVersion: a.version, Out: a.stdout}
 			nodeID, accountID, err := p.Pair(cmd.Context(), settings.Name, id)
 			if err != nil {
 				return err

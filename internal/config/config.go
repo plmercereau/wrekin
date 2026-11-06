@@ -96,9 +96,11 @@ func Load(path string) (Settings, error) {
 	return s, nil
 }
 
-// Save writes the settings as indented JSON, creating the directory.
+// Save writes the settings as indented JSON, creating the directory private
+// (0700): it is also where identity.Save keeps the node's private key, and
+// whichever of the two runs first must not leave it wider.
 func Save(path string, s Settings) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
 	data, err := json.MarshalIndent(s, "", "  ")

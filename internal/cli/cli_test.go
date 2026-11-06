@@ -3,6 +3,10 @@ package cli
 import (
 	"bytes"
 	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -62,5 +66,59 @@ func TestCLIVersionAndSettingsFlag(t *testing.T) {
 	}
 	if _, err := run(t, "attach", "../evil"); err == nil {
 		t.Error("attach must refuse a hostile session name")
+	}
+}
+
+// fakeAuth approves the device flow at once, in process; the pairing package
+// tests the flow itself.
+type fakeAuth struct{}
+
+func (fakeAuth) RoundTrip(req *http.Request) (*http.Response, error) {
+	rec := httptest.NewRecorder()
+	rec.Header().Set("Content-Type", "application/json")
+	switch req.URL.Path {
+	case "/api/auth/device/code":
+		fmt.Fprint(rec, `{"device_code":"d","user_code":"U","verification_uri_complete":"https://wrekin.test/device?user_code=U","expires_in":60,"interval":1}`)
+	case "/api/auth/device/token":
+		fmt.Fprint(rec, `{"access_token":"tok","token_type":"Bearer"}`)
+	case "/api/nodes":
+		rec.WriteHeader(http.StatusCreated)
+		fmt.Fprint(rec, `{"nodeId":"node_01J","accountId":"usr_1"}`)
+	default:
+		fmt.Fprint(rec, `{}`)
+	}
+	return rec.Result(), nil
+}
+
+// `wrekin auth` writes identity.json and, when absent, settings.json; both
+// directories it creates must be private, whichever is created first.
+func TestAuthCreatesPrivateConfigDir(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	settingsPath := filepath.Join(t.TempDir(), "fresh", "settings.json")
+	var out bytes.Buffer
+	a := &app{version: "t", stdout: &out, stderr: &out, stdin: strings.NewReader(""), httpClient: &http.Client{Transport: fakeAuth{}}}
+	root := newRootCommand(a)
+	root.SetArgs([]string{"auth", "--settings", settingsPath, "--relay", "wss://wrekin.test/connect"})
+	if err := root.Execute(); err != nil {
+		t.Fatalf("auth: %v\n%s", err, out.String())
+	}
+	if !strings.Contains(out.String(), "Paired as node node_01J") {
+		t.Errorf("output:\n%s", out.String())
+	}
+	for _, dir := range []string{paths.ConfigDir(), filepath.Dir(settingsPath)} {
+		info, err := os.Stat(dir)
+		if err != nil {
+			t.Fatalf("%s: %v", dir, err)
+		}
+		if info.Mode().Perm() != 0o700 {
+			t.Errorf("%s mode %04o, want 0700", dir, info.Mode().Perm())
+		}
+	}
+	info, err := os.Stat(paths.IdentityFile())
+	if err != nil || info.Mode().Perm() != 0o600 {
+		t.Errorf("identity.json: %v mode %v", err, info)
+	}
+	if _, err := os.Stat(settingsPath); err != nil {
+		t.Errorf("settings.json not written: %v", err)
 	}
 }

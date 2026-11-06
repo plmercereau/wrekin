@@ -73,6 +73,25 @@ func TestLoadExpandsTildeInDirectories(t *testing.T) {
 	}
 }
 
+// The configuration directory also holds identity.json (the private key);
+// whichever of config.Save and identity.Save creates it, it must be private.
+func TestSaveCreatesPrivateDirectory(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "fresh", "settings.json")
+	if err := Save(path, Default()); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	info, err := os.Stat(filepath.Dir(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o700 {
+		t.Errorf("directory mode %04o, want 0700", info.Mode().Perm())
+	}
+	if _, err := Load(path); err != nil {
+		t.Errorf("Load after Save: %v", err)
+	}
+}
+
 func TestValidateRejectsZeroMaxConcurrent(t *testing.T) {
 	s := Default()
 	s.Teleport.MaxConcurrent = 0
