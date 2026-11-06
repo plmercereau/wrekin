@@ -207,6 +207,19 @@ func (d *daemon) handleControl(ctx context.Context, method string, params json.R
 			}
 		}
 		return d.cleanup(ctx, p.DryRun), nil
+	case control.MethodReposForget:
+		var p control.ReposForgetParams
+		if err := json.Unmarshal(params, &p); err != nil {
+			return nil, fmt.Errorf("repos.forget parameters: %w", err)
+		}
+		entry, removed, err := d.learned.Forget(p.Repository)
+		if err != nil {
+			return nil, err
+		}
+		if removed {
+			d.logger.Info("learned mapping forgotten", "repository", entry.Repository, "path", entry.Path)
+		}
+		return control.ReposForgetResult{Removed: removed, Repository: entry.Repository, Path: entry.Path}, nil
 	case control.MethodShutdown:
 		d.logger.Info("shutdown requested through the control socket")
 		go func() {
@@ -265,6 +278,10 @@ func (d *daemon) cleanup(ctx context.Context, dryRun bool) control.CleanupReport
 				if !dryRun {
 					if err := os.RemoveAll(clone); err != nil {
 						report.Errors = append(report.Errors, fmt.Sprintf("clone %s: %v", clone, err))
+					} else if d.learned != nil {
+						if _, err := d.learned.ForgetPath(clone); err != nil {
+							report.Errors = append(report.Errors, fmt.Sprintf("learned mapping of %s: %v", clone, err))
+						}
 					}
 				}
 			}

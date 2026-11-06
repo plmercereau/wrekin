@@ -29,6 +29,9 @@ const (
 	MethodSessions = "sessions"
 	MethodCleanup  = "cleanup"
 	MethodShutdown = "shutdown"
+	// MethodReposForget removes a learned repository mapping; the daemon owns
+	// that file while it runs, so the CLI asks it instead of writing.
+	MethodReposForget = "repos.forget"
 )
 
 // Request is one call.
@@ -75,6 +78,18 @@ type CleanupReport struct {
 	Jobs      []string `json:"jobs"`
 	Skipped   []string `json:"skipped"`
 	Errors    []string `json:"errors"`
+}
+
+// ReposForgetParams are the parameters of "repos.forget".
+type ReposForgetParams struct {
+	Repository string `json:"repository"`
+}
+
+// ReposForgetResult says what "repos.forget" removed.
+type ReposForgetResult struct {
+	Removed    bool   `json:"removed"`
+	Repository string `json:"repository,omitempty"`
+	Path       string `json:"path,omitempty"`
 }
 
 // Handler serves one method.
