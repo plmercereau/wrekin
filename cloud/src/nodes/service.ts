@@ -10,8 +10,19 @@ export const unregisterMessage = (nodeId: string, timestamp: string): string =>
 /** An unregistration timestamp is accepted within this many seconds of the Worker's clock. */
 export const UNREGISTER_SKEW_SECONDS = 300;
 
+/**
+ * A node name: a letter or digit, then up to 63 letters, digits, spaces, dots, underscores
+ * or dashes. No control character reaches the pages or the MCP text, and nothing shaped
+ * like a node id (`node_…`) can make `findNode(accountId, idOrName)` ambiguous.
+ */
+export const NODE_NAME = /^[\p{L}\p{N}][\p{L}\p{N} ._-]{0,63}$/u;
+
 export const registerSchema = z.object({
-  name: z.string().trim().min(1).max(64),
+  name: z
+    .string()
+    .trim()
+    .regex(NODE_NAME, "a name is 1 to 64 letters, digits, spaces, dots, underscores or dashes, starting with a letter or digit")
+    .refine((name) => !/^node_/i.test(name), "a name must not start with node_, the shape of a node id"),
   publicKey: z.string().min(1),
   agentVersion: z.string().max(64).optional(),
   platform: z.string().max(128).optional(),

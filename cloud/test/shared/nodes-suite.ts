@@ -82,6 +82,17 @@ export function nodesSuite(fetcher: Fetcher, newSession: SessionFactory, listNod
       }
     });
 
+    it("accepts letters, digits, spaces, dots, underscores and dashes in a name, and nothing else", async () => {
+      const { headers } = await newSession("gus");
+      const ok = await fetcher("/api/nodes", json({ name: "work-station 2", publicKey: (await generateNodeKey()).publicKey }, headers));
+      expect(ok.status).toBe(201);
+      for (const name of ["my\nnode", "node_abc", "NODE_abc", "-dash-first", "x".repeat(65), "tab\tbed"]) {
+        const res = await fetcher("/api/nodes", json({ name, publicKey: (await generateNodeKey()).publicKey }, headers));
+        expect(res.status, JSON.stringify(name)).toBe(400);
+        expect(((await res.json()) as { error: string }).error).toBe("invalid_body");
+      }
+    });
+
     it("refuses a malformed body with 400 invalid_body", async () => {
       const { headers } = await newSession("eve");
       const res = await fetcher("/api/nodes", json({ name: "" }, headers));

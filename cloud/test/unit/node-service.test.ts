@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { listNodes, NodeServiceError, parseTimestamp, registerNode, removeNode, toNodeView, unregisterMessage, unregisterNode } from "../../src/nodes/service";
+import { listNodes, NodeServiceError, parseTimestamp, registerNode, registerSchema, removeNode, toNodeView, unregisterMessage, unregisterNode } from "../../src/nodes/service";
 import { FakeHub } from "../helpers/fake-hub";
 import { alternateSpelling, generateNodeKey } from "../helpers/keys";
 import { MemoryNodeStore } from "../helpers/memory-nodes";
@@ -27,6 +27,24 @@ describe("parseTimestamp", () => {
     [Number.NaN, null],
   ])("%s → %s", (input, expected) => {
     expect(parseTimestamp(input)).toBe(expected);
+  });
+});
+
+describe("registerSchema", () => {
+  const key = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+  it.each(["work-station 2", "mbp", "Bureau Élodie", "東京-1", "a.b_c", "x".repeat(64), "  trimmed  "])("accepts %j", (name) => {
+    expect(registerSchema.safeParse({ name, publicKey: key }).success).toBe(true);
+  });
+
+  it.each(["my\nnode", "tab\tbed", "node_abc", "NODE_abc", "node_", "-first", ".first", "x".repeat(65), "", "   ", "a/b", "a\u0000b", "emoji 🚀"])(
+    "refuses %j",
+    (name) => {
+      expect(registerSchema.safeParse({ name, publicKey: key }).success).toBe(false);
+    },
+  );
+
+  it("trims the name before the rule applies", () => {
+    expect(registerSchema.parse({ name: "  trimmed  ", publicKey: key }).name).toBe("trimmed");
   });
 });
 
