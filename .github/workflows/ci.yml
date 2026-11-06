@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    name: Go (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Install tmux (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y tmux
+      - name: Install tmux (macOS)
+        if: runner.os == 'macOS'
+        run: brew install tmux
+      - name: gofmt
+        run: |
+          files="$(gofmt -l .)"
+          if [ -n "$files" ]; then
+            echo "These files are not gofmt-ed:"
+            echo "$files"
+            exit 1
+          fi
+      - name: go vet
+        run: go vet ./...
+      - name: go test
+        run: go test -race ./...
+
+  cloud:
+    name: Cloud (Worker)
+    runs-on: ubuntu-latest
+    # Requires cloud/ (Track B): package.json, bun.lock and the typecheck/test scripts.
+    defaults:
+      run:
+        working-directory: cloud
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - run: bun run test
+
+  goreleaser-check:
+    name: GoReleaser config
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: check
+
+  nix:
+    name: Nix
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/nix-installer-action@main
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+      - run: nix flake check
+      - run: nix build .#wrekin
+      - run: ./result/bin/wrekin --version
