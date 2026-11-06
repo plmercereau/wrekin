@@ -221,3 +221,19 @@ func TestAuthOnAPairedMachineStillSignsClaudeIn(t *testing.T) {
 		t.Errorf("logins = %d, output:\n%s", fake.logins, out.String())
 	}
 }
+
+// /dev/null is a character device, not a terminal: `wrekin auth < /dev/null`
+// (a script, ssh without -t) must not start an interactive login.
+func TestInteractiveStdinIsFalseForDevNull(t *testing.T) {
+	null, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer null.Close()
+	if (&app{stdin: null}).interactiveStdin() {
+		t.Error("/dev/null taken for a terminal")
+	}
+	if (&app{stdin: strings.NewReader("")}).interactiveStdin() {
+		t.Error("a reader taken for a terminal")
+	}
+}

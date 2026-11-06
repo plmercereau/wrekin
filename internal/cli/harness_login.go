@@ -31,11 +31,7 @@ func (a *app) interactiveStdin() bool {
 		return a.interactive()
 	}
 	f, ok := a.stdin.(*os.File)
-	if !ok {
-		return false
-	}
-	info, err := f.Stat()
-	return err == nil && info.Mode()&os.ModeCharDevice != 0
+	return ok && isTerminal(f.Fd())
 }
 
 // ensureClaudeSignedIn makes sure Claude Code can run on this machine: a
