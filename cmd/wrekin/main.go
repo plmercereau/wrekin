@@ -1,15 +1,11 @@
-// Command wrekin is the Wrekin agent.
-//
-// This file is a placeholder so that the packaging (GoReleaser, the Nix
-// flake, CI) can be exercised before the real agent lands. Track A replaces
-// it with the cobra-based CLI.
+// Command wrekin is the Wrekin node agent and its command-line interface.
 package main
 
-import "fmt"
+import "github.com/plmercereau/wrekin/internal/cli"
 
-// version is set at build time with -ldflags "-X main.version=...".
+// version is set at build time with -ldflags "-X main.version=…".
 var version = "dev"
 
 func main() {
-	fmt.Printf("wrekin %s\n", version)
+	cli.Execute(version)
 }
